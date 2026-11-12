@@ -31,19 +31,23 @@ You'll need a Supabase account, a Google Cloud account and (to host it) a Vercel
 ### 1. Create the Supabase project
 
 1. In [Supabase](https://supabase.com/dashboard), create a new project. Pick the **Frankfurt (eu-central-1)** region to keep data in the EU.
-2. Open **SQL Editor** and run the three files in `supabase/migrations/` **in order**, pasting each one in full:
+2. Open **SQL Editor** and run the files in `supabase/migrations/` **in order**, pasting each one in full:
    1. `20261112000100_core_schema.sql`
    2. `20261112000200_engine_and_rpcs.sql`
    3. `20261112000300_realtime_and_schedule.sql`
+   4. `20261112000400_allowlist_expiry.sql`
 
    (Or with the Supabase CLI: `supabase link --project-ref <ref>` then `supabase db push`.)
-3. Add the Google accounts allowed to use the app (lowercase):
+3. Add the Google accounts allowed to use the app (lowercase). Give temporary members an end date:
 
    ```sql
-   insert into public.app_allowlist (email) values
-     ('your.address@gmail.com'),
-     ('your.wifes.address@gmail.com');
+   insert into public.app_allowlist (email, note, expires_at) values
+     ('you@gmail.com',     'Owner',   null),
+     ('partner@gmail.com', 'Partner', null),
+     ('guest@gmail.com',   'Au pair', '2026-12-10 23:59:59 Europe/Amsterdam');
    ```
+
+   When an end date passes, or you delete someone's row, they lose access to all household data straight away, even if they're signed in. Whatever they added to the lists stays. To extend access, update `expires_at`.
 
 ### 2. Set up Google sign-in
 
@@ -113,7 +117,7 @@ Everything is in plain SQL in `20261112000200_engine_and_rpcs.sql`, and `item_pa
 
 ## Security
 
-- **Allowlist:** only emails in `app_allowlist` can create or join a household. Enforced in the database, not just the UI.
+- **Allowlist:** only emails in `app_allowlist` can create or join a household, and every data access re-checks it, so removing an email or letting its `expires_at` pass revokes access immediately. Enforced in the database, not just the UI.
 - **Row Level Security** on every table: you can only ever read or change your own household's rows.
 - **Engine-owned tables** (`purchase_events`, `item_patterns`, `suggestion_feedback`) are read-only from the browser. Only triggers and server-side functions write them.
 - **Function permissions** are revoked by default; the browser can call only the RPCs it needs. Internal engine functions can't be called from the app.

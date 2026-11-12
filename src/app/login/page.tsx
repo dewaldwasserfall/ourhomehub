@@ -10,7 +10,7 @@ import { GoogleSignInButton } from "./google-sign-in-button";
 
 const ERRORS: Record<string, string> = {
   not_allowed:
-    "That Google account isn't on this household's allowlist. Sign in with an allowed account, or ask for yours to be added.",
+    "That Google account doesn't have access. It may not be on the allowlist, or its access period has ended. Ask whoever set up the app.",
   auth_failed: "Google sign-in didn't complete. Try again.",
 };
 

@@ -52,6 +52,7 @@ const USERS = {
   partner: { id: "22222222-2222-4222-8222-222222222222", email: "partner@example.com" },
   stranger: { id: "33333333-3333-4333-8333-333333333333", email: "stranger@example.com" },
   outsider: { id: "44444444-4444-4444-8444-444444444444", email: "outsider@example.com" },
+  aupair: { id: "55555555-5555-4555-8555-555555555555", email: "aupair@example.com" },
 } as const;
 
 type UserKey = keyof typeof USERS;
@@ -106,7 +107,11 @@ beforeAll(async () => {
 
   // Apply the schema and engine migrations. The realtime/cron migration needs
   // Supabase platform features and is not part of this test.
-  const files = ["20261112000100_core_schema.sql", "20261112000200_engine_and_rpcs.sql"];
+  const files = [
+    "20261112000100_core_schema.sql",
+    "20261112000200_engine_and_rpcs.sql",
+    "20261112000400_allowlist_expiry.sql",
+  ];
   for (const file of files) {
     await db.exec(readFileSync(path.join(MIGRATIONS_DIR, file), "utf8"));
   }
@@ -119,6 +124,8 @@ beforeAll(async () => {
   await db.exec(`
     insert into public.app_allowlist (email) values
       ('dewald@example.com'), ('partner@example.com'), ('stranger@example.com');
+    insert into public.app_allowlist (email, expires_at) values
+      ('aupair@example.com', now() + interval '30 days');
   `);
 });
 
@@ -447,5 +454,53 @@ describe("prediction engine", () => {
     await expect(db.query(`select public.compute_item_pattern($1)`, [toiletPaperId])).rejects.toThrow(
       /permission denied/,
     );
+  });
+});
+
+// -----------------------------------------------------------------------------
+// Step 6: time-limited access (au pair)
+// -----------------------------------------------------------------------------
+
+describe("time-limited access", () => {
+  it("lets a time-limited member join and use the lists before the end date", async () => {
+    await actAsAdmin();
+    const { invite_code } = await one<{ invite_code: string }>(
+      `select invite_code from public.households where id = $1`,
+      [householdId],
+    );
+    await actAs("aupair");
+    await one(`select public.join_household($1, 'Jana')`, [invite_code]);
+    const lists = await all(`select id from public.lists`);
+    expect(lists.length).toBeGreaterThan(0);
+    await one(`select public.add_entry($1, 'Nappies')`, [groceriesListId]);
+  });
+
+  it("cuts off all household data once the end date passes, keeping what they added", async () => {
+    await actAsAdmin();
+    await db.exec(`update public.app_allowlist set expires_at = now() - interval '1 minute'
+                   where email = 'aupair@example.com'`);
+
+    await actAs("aupair");
+    expect(await all(`select id from public.lists`)).toHaveLength(0);
+    expect(await all(`select id from public.list_entries`)).toHaveLength(0);
+    expect(await all(`select id from public.members`)).toHaveLength(0);
+    expect((await one<{ ok: boolean }>(`select public.is_email_allowed() as ok`)).ok).toBe(false);
+    await expect(db.query(`select public.add_entry($1, 'More nappies')`, [groceriesListId])).rejects.toThrow(
+      /not_in_household/,
+    );
+
+    // The rest of the household still sees the line they added.
+    await actAs("dewald");
+    const kept = await all(`select id from public.list_entries where text = 'Nappies'`);
+    expect(kept).toHaveLength(1);
+  });
+
+  it("removing someone from the allowlist revokes access straight away", async () => {
+    await actAsAdmin();
+    await db.exec(`delete from public.app_allowlist where email = 'stranger@example.com'`);
+    await actAs("stranger");
+    expect(await all(`select id from public.lists`)).toHaveLength(0);
+    await actAsAdmin();
+    await db.exec(`insert into public.app_allowlist (email) values ('stranger@example.com')`);
   });
 });
