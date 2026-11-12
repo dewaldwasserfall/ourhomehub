@@ -23,6 +23,8 @@ export interface Member {
   display_name: string;
   email: string | null;
   avatar_url: string | null;
+  /** Owners manage the household's calendar connection. */
+  role: "owner" | "member";
   created_at: string;
 }
 

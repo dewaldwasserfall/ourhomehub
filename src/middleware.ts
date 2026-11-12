@@ -11,7 +11,14 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 /** Paths anyone may open without signing in. */
-const PUBLIC_PATHS = ["/login", "/auth/", "/privacy"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/auth/",
+  "/privacy",
+  // Called by Google and Vercel Cron; each checks its own secret.
+  "/api/calendar/webhook",
+  "/api/cron/",
+];
 
 export async function middleware(request: NextRequest) {
   // Step 1: start from a pass-through response we can attach cookies to.
@@ -41,8 +48,12 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Step 4: signed out and not on a public page -> go to /login.
+  // Step 4: signed out and not on a public page -> go to /login
+  // (API routes answer 401 instead of redirecting).
   const isPublic = PUBLIC_PATHS.some((p) => request.nextUrl.pathname.startsWith(p));
+  if (!user && !isPublic && request.nextUrl.pathname.startsWith("/api/")) {
+    return NextResponse.json({ error: "not_authenticated", message: "Your session ended. Sign in again." }, { status: 401 });
+  }
   if (!user && !isPublic) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";

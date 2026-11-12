@@ -1,14 +1,15 @@
 /**
- * Bottom tab bar: Lists, Rhythms, Household. Frosted, fixed, safe-area aware.
+ * Bottom tab bar: Lists, Calendar, Rhythms, Household. Frosted, fixed, safe-area aware.
  */
 "use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { HomeIcon, ListsIcon, RhythmIcon } from "./icons";
+import { CalendarIcon, HomeIcon, ListsIcon, RhythmIcon } from "./icons";
 
 const TABS = [
   { href: "/", label: "Lists", Icon: ListsIcon, match: (p: string) => p === "/" || p.startsWith("/lists") },
+  { href: "/calendar", label: "Calendar", Icon: CalendarIcon, match: (p: string) => p.startsWith("/calendar") },
   { href: "/rhythms", label: "Rhythms", Icon: RhythmIcon, match: (p: string) => p.startsWith("/rhythms") },
   { href: "/household", label: "Household", Icon: HomeIcon, match: (p: string) => p.startsWith("/household") },
 ];

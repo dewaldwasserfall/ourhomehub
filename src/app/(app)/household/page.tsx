@@ -1,11 +1,13 @@
 /**
- * Household tab: who's in it, the invite code, and signing out.
+ * Household tab: who's in it, the invite code, the family calendar link,
+ * and signing out.
  */
 "use client";
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Avatar } from "@/components/avatar";
+import { FamilyCalendarCard } from "@/components/family-calendar-card";
 import { useHousehold } from "@/components/household-context";
 import { RefreshIcon, ShareIcon } from "@/components/icons";
 import { Navbar } from "@/components/navbar";
@@ -101,6 +103,7 @@ export default function HouseholdPage() {
                 <span className="row__title">
                   {member.display_name}
                   {member.id === me.id && <span style={{ color: "var(--ink-2)" }}> (you)</span>}
+                  {member.role === "owner" && <span style={{ color: "var(--ink-2)" }}>, owner</span>}
                 </span>
                 {member.email && <span className="row__subtitle">{member.email}</span>}
               </div>
@@ -138,6 +141,12 @@ export default function HouseholdPage() {
           Their Google account also has to be on the allowlist in Supabase. A new code stops the old one working.
         </p>
       </section>
+
+      {/* Family calendar */}
+      <FamilyCalendarCard
+        isOwner={me.role === "owner"}
+        ownerName={members.find((m) => m.role === "owner")?.display_name ?? "The owner"}
+      />
 
       {error && (
         <p className="form-error" role="alert">

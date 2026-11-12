@@ -169,3 +169,29 @@ export const GoogleIcon = ({ size = 20 }: { size?: number }) => (
     <path fill="#EA4335" d="M12 4.8c1.8 0 3.3.6 4.6 1.8l3.4-3.4A12 12 0 001.3 6.6l4 3.1c.9-2.9 3.6-4.9 6.7-4.9z" />
   </svg>
 );
+
+/** Tab: Calendar */
+export const CalendarIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3.5" y="5" width="17" height="15.5" rx="3.5" />
+    <path d="M3.5 10h17M8 3v4M16 3v4" />
+    <circle cx="8.5" cy="14.5" r="1" fill="currentColor" stroke="none" />
+  </Svg>
+);
+
+/** Marks a repeating event. */
+export const RepeatIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M17 3.5l3 3-3 3" />
+    <path d="M4 11.5v-1a4 4 0 014-4h12" />
+    <path d="M7 20.5l-3-3 3-3" />
+    <path d="M20 12.5v1a4 4 0 01-4 4H4" />
+  </Svg>
+);
+
+export const PinIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0113 0c0 5.4-6.5 11-6.5 11z" />
+    <circle cx="12" cy="10" r="2.3" />
+  </Svg>
+);

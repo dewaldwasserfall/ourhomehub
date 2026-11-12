@@ -37,9 +37,28 @@ const SUPABASE_STUB = `
     select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb
   $$;
 
-  grant usage on schema auth to anon, authenticated;
-  grant execute on function auth.uid(), auth.jwt() to anon, authenticated;
-  grant usage on schema public to anon, authenticated;
+  grant usage on schema auth to anon, authenticated, service_role;
+  grant execute on function auth.uid(), auth.jwt() to anon, authenticated, service_role;
+  grant usage on schema public to anon, authenticated, service_role;
+
+  -- Supabase Vault look-alike: same function signatures, no real encryption.
+  create schema vault;
+  create table vault.secrets (
+    id uuid primary key default gen_random_uuid(),
+    name text, secret text, description text
+  );
+  create function vault.create_secret(new_secret text, new_name text default null, new_description text default '')
+  returns uuid language sql as $$
+    insert into vault.secrets (secret, name, description) values (new_secret, new_name, new_description) returning id
+  $$;
+  create function vault.update_secret(secret_id uuid, new_secret text default null)
+  returns void language sql as $$
+    update vault.secrets set secret = coalesce(new_secret, secret) where id = secret_id
+  $$;
+  create view vault.decrypted_secrets as select id, name, secret as decrypted_secret from vault.secrets;
+
+  -- Realtime publication that the migrations add tables to.
+  create publication supabase_realtime;
 `;
 
 /** Supabase's default table grants; RLS is what actually restricts access. */
@@ -112,6 +131,7 @@ beforeAll(async () => {
     "20261112000200_engine_and_rpcs.sql",
     "20261112000400_allowlist_expiry.sql",
     "20261112000500_pin_function_search_paths.sql",
+    "20261112000600_calendar.sql",
   ];
   for (const file of files) {
     await db.exec(readFileSync(path.join(MIGRATIONS_DIR, file), "utf8"));
@@ -503,5 +523,95 @@ describe("time-limited access", () => {
     expect(await all(`select id from public.lists`)).toHaveLength(0);
     await actAsAdmin();
     await db.exec(`insert into public.app_allowlist (email) values ('stranger@example.com')`);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// Step 7: Phase 2, shared Google Calendar
+// -----------------------------------------------------------------------------
+
+describe("calendar: roles, connection and events", () => {
+  /** Run statements as the server (service-role key). */
+  async function actAsServer() {
+    await db.exec(`reset role; set role service_role;`);
+  }
+
+  it("makes the household creator the owner and everyone else a member", async () => {
+    await actAs("dewald");
+    expect((await one<{ ok: boolean }>(`select public.is_household_owner() as ok`)).ok).toBe(true);
+    await actAs("partner");
+    expect((await one<{ ok: boolean }>(`select public.is_household_owner() as ok`)).ok).toBe(false);
+  });
+
+  it("stops members promoting themselves", async () => {
+    await actAs("partner");
+    await expect(
+      db.query(`update public.members set role = 'owner' where user_id = $1`, [USERS.partner.id]),
+    ).rejects.toThrow(/role_change_not_allowed/);
+    // Changing their own name still works.
+    await db.query(`update public.members set display_name = 'Anél' where user_id = $1`, [USERS.partner.id]);
+  });
+
+  it("stores the refresh token in Vault, readable only by the server", async () => {
+    await actAsServer();
+    await db.query(`select public.calendar_save_connection($1, 'Family@Example.com', 'family@example.com', 'refresh-1', null)`, [
+      householdId,
+    ]);
+    const token = await one<{ t: string }>(`select public.calendar_get_refresh_token($1) as t`, [householdId]);
+    expect(token.t).toBe("refresh-1");
+
+    // Reconnecting replaces the token in the same Vault secret.
+    await db.query(`select public.calendar_save_connection($1, 'family@example.com', 'family@example.com', 'refresh-2', null)`, [
+      householdId,
+    ]);
+    await actAsAdmin();
+    const secrets = await all<{ secret: string }>(`select secret from vault.secrets`);
+    expect(secrets.map((s) => s.secret)).toEqual(["refresh-2"]);
+  });
+
+  it("shows members a safe status, never the token", async () => {
+    await actAs("partner");
+    const status = await one<{ connected: boolean; google_email: string }>(
+      `select * from public.calendar_connection_status()`,
+    );
+    expect(status).toMatchObject({ connected: true, google_email: "family@example.com" });
+    expect(await all(`select * from public.calendar_connections`)).toHaveLength(0);
+    await expect(db.query(`select public.calendar_get_refresh_token($1)`, [householdId])).rejects.toThrow(
+      /permission denied/,
+    );
+
+    // Another household sees no connection at all.
+    await actAs("stranger");
+    expect(await all(`select * from public.calendar_connection_status()`)).toHaveLength(0);
+  });
+
+  it("lets members read synced events but not write them directly", async () => {
+    await actAsAdmin();
+    await db.query(
+      `insert into public.calendar_events (household_id, google_event_id, title, start_at, end_at)
+       values ($1, 'g1', 'Swimming lessons', now() + interval '1 day', now() + interval '1 day 1 hour')`,
+      [householdId],
+    );
+
+    await actAs("partner");
+    const rows = await all<{ title: string }>(`select title from public.calendar_events`);
+    expect(rows.map((r) => r.title)).toEqual(["Swimming lessons"]);
+    await expect(
+      db.query(`insert into public.calendar_events (household_id, google_event_id, title) values ($1, 'x', 'Sneaky')`, [
+        householdId,
+      ]),
+    ).rejects.toThrow();
+
+    await actAs("stranger");
+    expect(await all(`select * from public.calendar_events`)).toHaveLength(0);
+  });
+
+  it("disconnecting removes the connection, its secret and the synced events", async () => {
+    await actAsServer();
+    await db.query(`select public.calendar_remove_connection($1)`, [householdId]);
+    await actAsAdmin();
+    expect(await all(`select * from public.calendar_connections`)).toHaveLength(0);
+    expect(await all(`select * from public.calendar_events where household_id = $1`, [householdId])).toHaveLength(0);
+    expect(await all(`select * from vault.secrets`)).toHaveLength(0);
   });
 });
