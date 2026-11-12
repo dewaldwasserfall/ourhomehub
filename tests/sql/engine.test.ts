@@ -111,6 +111,7 @@ beforeAll(async () => {
     "20261112000100_core_schema.sql",
     "20261112000200_engine_and_rpcs.sql",
     "20261112000400_allowlist_expiry.sql",
+    "20261112000500_pin_function_search_paths.sql",
   ];
   for (const file of files) {
     await db.exec(readFileSync(path.join(MIGRATIONS_DIR, file), "utf8"));

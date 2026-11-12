@@ -36,6 +36,7 @@ You'll need a Supabase account, a Google Cloud account and (to host it) a Vercel
    2. `20261112000200_engine_and_rpcs.sql`
    3. `20261112000300_realtime_and_schedule.sql`
    4. `20261112000400_allowlist_expiry.sql`
+   5. `20261112000500_pin_function_search_paths.sql`
 
    (Or with the Supabase CLI: `supabase link --project-ref <ref>` then `supabase db push`.)
 3. Add the Google accounts allowed to use the app (lowercase). Give temporary members an end date:
@@ -44,7 +45,7 @@ You'll need a Supabase account, a Google Cloud account and (to host it) a Vercel
    insert into public.app_allowlist (email, note, expires_at) values
      ('you@gmail.com',     'Owner',   null),
      ('partner@gmail.com', 'Partner', null),
-     ('guest@gmail.com',   'Au pair', '2026-12-10 23:59:59 Europe/Amsterdam');
+     ('guest@gmail.com',   'Guest',   '2026-12-10 23:59:59 Europe/Amsterdam');
    ```
 
    When an end date passes, or you delete someone's row, they lose access to all household data straight away, even if they're signed in. Whatever they added to the lists stays. To extend access, update `expires_at`.
