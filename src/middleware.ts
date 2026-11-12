@@ -11,7 +11,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 /** Paths anyone may open without signing in. */
-const PUBLIC_PATHS = ["/login", "/auth/"];
+const PUBLIC_PATHS = ["/login", "/auth/", "/privacy"];
 
 export async function middleware(request: NextRequest) {
   // Step 1: start from a pass-through response we can attach cookies to.
