@@ -1,0 +1,160 @@
+/**
+ * Data hook for one list screen.
+ *
+ * Loads the list, its open and recently completed lines (with item and
+ * learned pattern), and the household's item catalogue for autocomplete.
+ * Subscribes to realtime so changes from the other phone appear instantly,
+ * and exposes optimistic helpers so taps feel immediate.
+ */
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getSupabaseBrowserClient } from "./supabase/client";
+import type { EntryStatus, ItemWithPattern, List, ListEntryWithItem } from "./types";
+
+/** How many completed lines to keep visible before "Clear" tidies them away. */
+const COMPLETED_LIMIT = 40;
+
+const ENTRY_SELECT = "*, item:items(*, pattern:item_patterns(*))";
+
+export function useListData(listId: string) {
+  const supabase = getSupabaseBrowserClient();
+  const [list, setList] = useState<List | null>(null);
+  const [entries, setEntries] = useState<ListEntryWithItem[]>([]);
+  const [catalogue, setCatalogue] = useState<ItemWithPattern[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const refetchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // Step 1: fetch the lines (open + recent completed).
+  const loadEntries = useCallback(async () => {
+    const [open, done] = await Promise.all([
+      supabase.from("list_entries").select(ENTRY_SELECT).eq("list_id", listId).eq("status", "open").order("added_at"),
+      supabase
+        .from("list_entries")
+        .select(ENTRY_SELECT)
+        .eq("list_id", listId)
+        .eq("status", "done")
+        .order("completed_at", { ascending: false })
+        .limit(COMPLETED_LIMIT),
+    ]);
+    if (!open.error && !done.error) {
+      setEntries([...(open.data as ListEntryWithItem[]), ...(done.data as ListEntryWithItem[])]);
+    }
+  }, [supabase, listId]);
+
+  // Step 2: fetch the catalogue (only needed for shopping lists).
+  const loadCatalogue = useCallback(async () => {
+    const { data } = await supabase.from("items").select("*, pattern:item_patterns(*)").order("display_name");
+    if (data) setCatalogue(data as ItemWithPattern[]);
+  }, [supabase]);
+
+  // Step 3: initial load. For shopping lists, ask the engine for anything due
+  // first, so suggestions are there the moment the list opens.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const { data: listRow } = await supabase.from("lists").select("*").eq("id", listId).maybeSingle<List>();
+      if (cancelled) return;
+      if (!listRow) {
+        setNotFound(true);
+        setLoading(false);
+        return;
+      }
+      setList(listRow);
+      if (listRow.type === "shopping") {
+        await supabase.rpc("refresh_suggestions");
+        await loadCatalogue();
+      }
+      await loadEntries();
+      if (!cancelled) setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, listId, loadEntries, loadCatalogue]);
+
+  // Step 4: realtime. Any change to this household's lines triggers a short,
+  // debounced refetch (bursts like "Clear completed" collapse into one).
+  useEffect(() => {
+    if (!list) return;
+    const scheduleRefetch = () => {
+      clearTimeout(refetchTimer.current);
+      refetchTimer.current = setTimeout(() => {
+        loadEntries();
+        if (list.type === "shopping") loadCatalogue();
+      }, 250);
+    };
+    const channel = supabase
+      .channel(`list:${list.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "list_entries", filter: `list_id=eq.${list.id}` },
+        scheduleRefetch,
+      )
+      // Deletes only carry the primary key, so they can't be filtered by list.
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "list_entries" }, scheduleRefetch)
+      .subscribe();
+
+    // Also catch up when the app comes back to the foreground.
+    const onVisible = () => document.visibilityState === "visible" && scheduleRefetch();
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      clearTimeout(refetchTimer.current);
+      document.removeEventListener("visibilitychange", onVisible);
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, list, loadEntries, loadCatalogue]);
+
+  // Step 5: optimistic helpers. Update local state first, then the database;
+  // on failure, reload the truth and report the error to the caller.
+  const patchLocal = useCallback((id: string, patch: Partial<ListEntryWithItem>) => {
+    setEntries((current) => current.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+  }, []);
+
+  const setStatus = useCallback(
+    async (id: string, status: EntryStatus) => {
+      const now = new Date().toISOString();
+      patchLocal(id, { status, completed_at: status === "done" ? now : null });
+      const { error } = await supabase.from("list_entries").update({ status }).eq("id", id);
+      if (error) await loadEntries();
+      return error;
+    },
+    [supabase, patchLocal, loadEntries],
+  );
+
+  const removeEntry = useCallback(
+    async (id: string) => {
+      setEntries((current) => current.filter((e) => e.id !== id));
+      const { error } = await supabase.from("list_entries").delete().eq("id", id);
+      if (error) await loadEntries();
+      return error;
+    },
+    [supabase, loadEntries],
+  );
+
+  const clearCompleted = useCallback(async () => {
+    const doneIds = entries.filter((e) => e.status === "done").map((e) => e.id);
+    if (doneIds.length === 0) return null;
+    setEntries((current) => current.filter((e) => e.status !== "done"));
+    const { error } = await supabase.from("list_entries").update({ status: "cleared" }).in("id", doneIds);
+    if (error) await loadEntries();
+    return error;
+  }, [supabase, entries, loadEntries]);
+
+  return {
+    list,
+    entries,
+    catalogue,
+    loading,
+    notFound,
+    reload: loadEntries,
+    reloadCatalogue: loadCatalogue,
+    patchLocal,
+    setStatus,
+    removeEntry,
+    clearCompleted,
+  };
+}
