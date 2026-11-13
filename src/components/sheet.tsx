@@ -28,17 +28,24 @@ export function Sheet({ open, onClose, title, leading, trailing, children }: She
   const isDesktop = useIsDesktop();
 
   // Step 1: Escape closes; focus moves into the sheet when it opens.
+  //         onClose is read through a ref so this runs only when the sheet
+  //         opens or closes. (Depending on onClose itself re-ran it on every
+  //         parent re-render, e.g. each keystroke in a field whose state lives
+  //         in the page, moving focus away and closing the phone keyboard.)
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCloseRef.current();
     window.addEventListener("keydown", onKey);
     const previouslyFocused = document.activeElement as HTMLElement | null;
-    panelRef.current?.focus();
+    // Keep focus on a field that autofocused itself; otherwise focus the sheet.
+    if (!panelRef.current?.contains(document.activeElement)) panelRef.current?.focus();
     return () => {
       window.removeEventListener("keydown", onKey);
       previouslyFocused?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   return (
     <AnimatePresence>

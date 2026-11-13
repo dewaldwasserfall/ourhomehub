@@ -11,6 +11,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getSupabaseBrowserClient } from "../supabase/client";
 import type { CalendarConnectionStatus, CalendarEventRow, EventInput } from "./types";
 
+/** Rows per request; matches Supabase's default API row limit. */
+const EVENTS_PAGE_SIZE = 1000;
+
 export interface ApiResult<T = unknown> {
   ok: boolean;
   data?: T;
@@ -42,18 +45,32 @@ export function useCalendar(householdId: string) {
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Step 1: load the synced events and the connection summary.
+  //         Supabase returns at most 1,000 rows per request, and the family
+  //         calendar has more, so events are fetched page by page (ordered by
+  //         id so pages never overlap or skip a row).
+  const loadAllEvents = useCallback(async (): Promise<CalendarEventRow[] | null> => {
+    const all: CalendarEventRow[] = [];
+    for (let from = 0; ; from += EVENTS_PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("calendar_events")
+        .select("*")
+        .order("id")
+        .range(from, from + EVENTS_PAGE_SIZE - 1);
+      if (error) return null;
+      all.push(...(data as CalendarEventRow[]));
+      if (data.length < EVENTS_PAGE_SIZE) return all;
+    }
+  }, [supabase]);
+
   const load = useCallback(async () => {
-    const [eventsRes, statusRes] = await Promise.all([
-      supabase.from("calendar_events").select("*"),
-      supabase.rpc("calendar_connection_status"),
-    ]);
-    if (!eventsRes.error) setRows(eventsRes.data as CalendarEventRow[]);
+    const [events, statusRes] = await Promise.all([loadAllEvents(), supabase.rpc("calendar_connection_status")]);
+    if (events) setRows(events);
     if (!statusRes.error) {
       const list = (statusRes.data ?? []) as CalendarConnectionStatus[];
       setStatus(list[0] ?? null);
     }
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, loadAllEvents]);
 
   // Step 2: ask the server to pull from Google now, then reload.
   const sync = useCallback(async () => {

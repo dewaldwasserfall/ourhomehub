@@ -140,22 +140,35 @@ export async function syncHousehold(householdId: string, opts: { full?: boolean 
     let removed = 0;
     if (full) {
       const keep = new Set(upserts.map((u) => u.google_event_id));
-      const { data: existing } = await admin.from("calendar_events").select("google_event_id").eq("household_id", householdId);
-      const stale = ((existing ?? []) as Array<{ google_event_id: string }>)
-        .map((e) => e.google_event_id)
-        .filter((id) => !keep.has(id));
-      deletes.push(...stale);
+      // Page through what we hold: the API returns at most 1,000 rows per request.
+      const existing: string[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data } = await admin
+          .from("calendar_events")
+          .select("google_event_id")
+          .eq("household_id", householdId)
+          .order("id")
+          .range(from, from + 999);
+        const page = (data ?? []) as Array<{ google_event_id: string }>;
+        existing.push(...page.map((e) => e.google_event_id));
+        if (page.length < 1000) break;
+      }
+      deletes.push(...existing.filter((id) => !keep.has(id)));
     }
-    if (deletes.length) {
-      // Removing a series also removes its stored exceptions.
-      const list = deletes.map((id) => `"${id.replace(/"/g, "")}"`).join(",");
+    // Removing a series also removes its stored exceptions. Deleted in
+    // batches of 100 ids so the request URL stays well within limits.
+    for (let i = 0; i < deletes.length; i += 100) {
+      const list = deletes
+        .slice(i, i + 100)
+        .map((id) => `"${id.replace(/"/g, "")}"`)
+        .join(",");
       await admin
         .from("calendar_events")
         .delete()
         .eq("household_id", householdId)
         .or(`google_event_id.in.(${list}),recurring_event_id.in.(${list})`);
-      removed = deletes.length;
     }
+    removed = deletes.length;
 
     // Step 2d: remember where we got to.
     await admin
