@@ -140,6 +140,7 @@ beforeAll(async () => {
     "20261112000500_pin_function_search_paths.sql",
     "20261112000600_calendar.sql",
     "20261113000700_today_routines_roles.sql",
+    "20261113000800_member_themes.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -879,5 +880,27 @@ describe("phase 3: routines, zones and chores", () => {
     await actAs("dewald");
     await db.query(`delete from public.chores where id = $1`, [choreId]);
     expect(await all(`select id from public.completions where kind = 'chore'`)).toHaveLength(0);
+  });
+});
+
+describe("themes", () => {
+  it("lets each person change only their own theme, to a known colour", async () => {
+    await actAs("kid");
+    await db.query(`update public.members set theme_accent = 'lavender', theme_mode = 'dark' where user_id = $1`, [USERS.kid.id]);
+    await expect(
+      db.query(`update public.members set theme_accent = 'neon' where user_id = $1`, [USERS.kid.id]),
+    ).rejects.toThrow();
+    // Someone else's row: RLS hides it, nothing changes.
+    await db.query(`update public.members set theme_accent = 'coral' where user_id = $1`, [USERS.dewald.id]);
+
+    await actAsAdmin();
+    const rows = await all<{ user_id: string; theme_accent: string; theme_mode: string }>(
+      `select user_id, theme_accent, theme_mode from public.members where user_id in ($1, $2) order by created_at`,
+      [USERS.dewald.id, USERS.kid.id],
+    );
+    expect(rows).toEqual([
+      { user_id: USERS.dewald.id, theme_accent: "basil", theme_mode: "system" },
+      { user_id: USERS.kid.id, theme_accent: "lavender", theme_mode: "dark" },
+    ]);
   });
 });

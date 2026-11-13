@@ -45,6 +45,9 @@ export interface Member {
    * child: reads the household, ticks off only what is assigned to them.
    */
   role: Role;
+  /** Accent colour id (src/lib/themes.ts) and Light / Dark / Automatic. */
+  theme_accent: string;
+  theme_mode: "system" | "light" | "dark";
   created_at: string;
 }
 

@@ -84,8 +84,10 @@
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
+/* Dark: forced by the person's theme (data-mode="dark") ... The accent
+   colours (--accent, --accent-ink, --accent-soft) are not here: they come from
+   the theme CSS in src/lib/themes.ts, per person, for light and dark. */
+:root[data-mode="dark"] {
     color-scheme: dark;
     --canvas: #000000;
     --surface: #1c1c1e;
@@ -97,9 +99,25 @@
     --separator: rgba(84, 84, 88, 0.55);
     --fill: rgba(118, 118, 128, 0.24);
     --fill-strong: rgba(118, 118, 128, 0.36);
-    --accent: #3ccb85;
-    --accent-ink: #00170c;
-    --accent-soft: rgba(60, 203, 133, 0.16);
+    --danger: #ff5a52;
+    --glow-soft: linear-gradient(115deg, rgba(79, 140, 255, 0.16), rgba(155, 107, 255, 0.14) 40%, rgba(255, 110, 168, 0.1) 70%, rgba(255, 181, 71, 0.1));
+    --float-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+  }
+
+/* ... or automatic, following the phone, unless they forced light. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-mode="light"]) {
+    color-scheme: dark;
+    --canvas: #000000;
+    --surface: #1c1c1e;
+    --surface-raised: #2c2c2e;
+    --chrome: rgba(22, 22, 24, 0.78);
+    --ink: #f5f5f7;
+    --ink-2: rgba(235, 235, 245, 0.6);
+    --ink-3: rgba(235, 235, 245, 0.3);
+    --separator: rgba(84, 84, 88, 0.55);
+    --fill: rgba(118, 118, 128, 0.24);
+    --fill-strong: rgba(118, 118, 128, 0.36);
     --danger: #ff5a52;
     --glow-soft: linear-gradient(115deg, rgba(79, 140, 255, 0.16), rgba(155, 107, 255, 0.14) 40%, rgba(255, 110, 168, 0.1) 70%, rgba(255, 181, 71, 0.1));
     --float-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
@@ -445,12 +463,13 @@ img {
   height: 20px;
   border-radius: 50%;
   object-fit: cover;
-  background: var(--fill-strong);
+  /* Initials sit on the person's own accent (set inline by <Avatar>). */
+  background: var(--accent-soft);
   display: grid;
   place-items: center;
   font-size: 10px;
-  font-weight: 600;
-  color: var(--ink-2);
+  font-weight: 700;
+  color: var(--accent);
 }
 
 .empty {
@@ -1493,8 +1512,14 @@ textarea.input {
   color: #c46a00;
 }
 
+/* Dark: forced by the person's theme (data-mode="dark") ... */
+:root[data-mode="dark"] .day-banner__mode--holiday {
+    color: #ffb340;
+  }
+
+/* ... or automatic, following the phone, unless they forced light. */
 @media (prefers-color-scheme: dark) {
-  .day-banner__mode--holiday {
+  :root:not([data-mode="light"]) .day-banner__mode--holiday {
     color: #ffb340;
   }
 }
@@ -1699,11 +1724,20 @@ textarea.input {
   color: var(--accent);
 }
 
-@media (prefers-color-scheme: dark) {
-  .kind-badge--holiday {
+/* Dark: forced by the person's theme (data-mode="dark") ... */
+:root[data-mode="dark"] .kind-badge--holiday {
     color: #ffb340;
   }
-  .kind-badge--public_holiday {
+:root[data-mode="dark"] .kind-badge--public_holiday {
+    color: #ff6482;
+  }
+
+/* ... or automatic, following the phone, unless they forced light. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-mode="light"]) .kind-badge--holiday {
+    color: #ffb340;
+  }
+  :root:not([data-mode="light"]) .kind-badge--public_holiday {
     color: #ff6482;
   }
 }
@@ -1984,4 +2018,47 @@ textarea.input {
     border-radius: var(--radius-sheet);
     box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28), 0 0 0 0.5px var(--separator);
   }
+}
+
+
+/* -----------------------------------------------------------------------------
+   18. Themes (the per-person colours themselves are in src/lib/themes.ts)
+   -------------------------------------------------------------------------- */
+.theme-picker {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 8px;
+}
+
+.swatch {
+  aspect-ratio: 1;
+  max-width: 40px;
+  width: 100%;
+  justify-self: center;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--accent-ink);
+  transition: transform 0.15s var(--ease-out);
+}
+
+.swatch:active {
+  transform: scale(0.9);
+}
+
+/* A ring in the swatch's own colour marks the chosen one. */
+.swatch[aria-checked="true"] {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
+}
+
+.swatch:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
 }

@@ -1,6 +1,7 @@
 /**
- * Household tab: who's in it, the household's plan (routines, zones, chores,
- * school holidays), the invite code, the family calendar link, and signing out.
+ * Household tab: who's in it, your own theme, the household's plan (routines,
+ * zones, chores, school holidays), the invite code, the family calendar link,
+ * and signing out.
  *
  * Children see the members, the calendar status and Sign out; renaming, the
  * plan and the invite code are for adults (the database enforces the same).
@@ -23,6 +24,7 @@ import {
   ZoneIcon,
 } from "@/components/icons";
 import { Navbar } from "@/components/navbar";
+import { ThemePicker } from "@/components/theme-picker";
 import { friendlyError } from "@/lib/errors";
 import { roleLabel } from "@/lib/roles";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -141,6 +143,9 @@ export default function HouseholdPage() {
           ))}
         </div>
       </section>
+
+      {/* Everyone's own colours */}
+      <ThemePicker />
 
       {/* The household's plan (adults) */}
       {meIsAdult && (

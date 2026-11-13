@@ -1,6 +1,8 @@
 /**
- * Member avatar: Google photo when available, otherwise the first initial.
+ * Member avatar: Google photo when available, otherwise the first initial on
+ * that person's own accent colour, so whose task is whose shows at a glance.
  */
+import { personAccentStyle } from "@/lib/themes";
 import type { Member } from "@/lib/types";
 
 export function Avatar({ member, size = "md" }: { member: Member | undefined; size?: "md" | "mini" }) {
@@ -21,7 +23,7 @@ export function Avatar({ member, size = "md" }: { member: Member | undefined; si
     );
   }
   return (
-    <span className={className} title={member.display_name} aria-hidden="true">
+    <span className={className} title={member.display_name} aria-hidden="true" style={personAccentStyle(member.theme_accent)}>
       {member.display_name.slice(0, 1).toUpperCase()}
     </span>
   );

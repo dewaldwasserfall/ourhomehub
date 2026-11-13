@@ -4,8 +4,9 @@
  */
 "use client";
 
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { isAdult } from "@/lib/roles";
+import { applyTheme, themeAttributes } from "@/lib/themes";
 import type { Household, Member } from "@/lib/types";
 
 interface HouseholdContextValue {
@@ -20,14 +21,16 @@ interface HouseholdContextValue {
   memberById: (memberId: string | null) => Member | undefined;
   /** Update the household locally after a rename or a settings change. */
   setHousehold: (household: Household) => void;
+  /** Update the signed-in member locally (e.g. after a theme change). */
+  updateMe: (patch: Partial<Member>) => void;
 }
 
 const HouseholdContext = createContext<HouseholdContextValue | null>(null);
 
 export function HouseholdProvider({
-  me,
+  me: initialMe,
   household: initialHousehold,
-  members,
+  members: initialMembers,
   children,
 }: {
   me: Member;
@@ -36,6 +39,25 @@ export function HouseholdProvider({
   children: ReactNode;
 }) {
   const [household, setHousehold] = useState(initialHousehold);
+  const [me, setMe] = useState(initialMe);
+  const [members, setMembers] = useState(initialMembers);
+
+  // Step 1: the theme on this device follows the member row. On a new device
+  // (or after changing theme on another one) the cookie is out of date, so
+  // apply the saved theme now; later page loads render it straight away.
+  useEffect(() => {
+    const want = themeAttributes(me.theme_accent, me.theme_mode);
+    const root = document.documentElement;
+    if (root.getAttribute("data-accent") !== want["data-accent"] || root.getAttribute("data-mode") !== (want["data-mode"] ?? null)) {
+      applyTheme(me.theme_accent, me.theme_mode);
+    }
+  }, [me.theme_accent, me.theme_mode]);
+
+  // Step 2: local updates to "me" also update their entry in the members list.
+  const updateMe = useCallback((patch: Partial<Member>) => {
+    setMe((current) => ({ ...current, ...patch }));
+    setMembers((list) => list.map((m) => (m.id === initialMe.id ? { ...m, ...patch } : m)));
+  }, [initialMe.id]);
 
   const value = useMemo<HouseholdContextValue>(() => {
     const byUser = new Map(members.map((m) => [m.user_id, m]));
@@ -48,8 +70,9 @@ export function HouseholdProvider({
       memberByUserId: (userId) => (userId ? byUser.get(userId) : undefined),
       memberById: (memberId) => (memberId ? byId.get(memberId) : undefined),
       setHousehold,
+      updateMe,
     };
-  }, [me, household, members]);
+  }, [me, household, members, updateMe]);
 
   return <HouseholdContext.Provider value={value}>{children}</HouseholdContext.Provider>;
 }

@@ -12,6 +12,7 @@
 "use client";
 
 import { ALL_MODES, WEEKDAY_NAMES, WEEKDAY_SHORT } from "@/lib/plan";
+import { personAccentStyle } from "@/lib/themes";
 import type { DayMode, Member } from "@/lib/types";
 import { Avatar } from "./avatar";
 
@@ -44,6 +45,8 @@ export function MemberChips({
             key={m.id}
             type="button"
             className="chip chip--person"
+            // A selected person shows in their own colour.
+            style={personAccentStyle(m.theme_accent)}
             aria-pressed={value === m.id}
             onClick={() => onChange(m.id)}
           >
