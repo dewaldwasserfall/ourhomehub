@@ -17,7 +17,6 @@ export interface BunqConnection {
   account_id: number | null;
   account_label: string | null;
   balance_cents: number | null;
-  budget_cents: number;
   period_start_day: number;
   status: "active" | "error";
   last_error: string | null;
@@ -66,7 +65,11 @@ export function useBudget(householdId: string, timeZone: string, enabled: boolea
   // Step 3: the numbers.
   const dayOf = useCallback((iso: string) => dateKey(new Date(iso), timeZone), [timeZone]);
   const summary = useMemo(
-    () => (connection?.account_id ? summarise(payments, today, connection.period_start_day, connection.budget_cents, dayOf) : null),
+    // No balance yet (never synced): nothing to show.
+    () =>
+      connection?.account_id && connection.balance_cents != null
+        ? summarise(payments, today, connection.period_start_day, connection.balance_cents, dayOf)
+        : null,
     [connection, payments, today, dayOf],
   );
   const merchants = useMemo(() => (summary ? byMerchant(payments, summary.period, dayOf) : []), [payments, summary, dayOf]);

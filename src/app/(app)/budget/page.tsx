@@ -9,7 +9,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BudgetBar, statusText } from "@/components/budget-bar";
 import { useHousehold } from "@/components/household-context";
 import { RefreshIcon } from "@/components/icons";
@@ -58,6 +58,18 @@ export default function BudgetPage() {
     if (!r.ok) toast.show(r.message ?? "Couldn't update from bunq.");
     await reload();
   }
+
+  // Step 1b: on open, fetch the latest balance from bunq if our copy is more
+  // than 15 minutes old (the background sync runs hourly).
+  const staleChecked = useRef(false);
+  useEffect(() => {
+    if (staleChecked.current || !connection?.account_id) return;
+    staleChecked.current = true;
+    const age = connection.last_synced_at ? Date.now() - new Date(connection.last_synced_at).getTime() : Infinity;
+    if (age > 15 * 60_000) calendarApi("/api/bunq/sync", "POST").then((r) => {
+      if (r.ok) reload();
+    });
+  }, [connection, reload]);
 
   const settingsLink =
     me.role === "owner" ? (
@@ -128,7 +140,7 @@ export default function BudgetPage() {
             <div className="group budget-hero">
               <div className="budget-hero__numbers">
                 <span className="budget-hero__spent">{euros(summary.spentCents)}</span>
-                <span className="budget-hero__of">of {euros(summary.budgetCents)}</span>
+                <span className="budget-hero__of">spent of {euros(summary.budgetCents)}</span>
               </div>
               <BudgetBar summary={summary} />
               <div className="budget-hero__meta">
@@ -145,6 +157,7 @@ export default function BudgetPage() {
               <div className="row">
                 <span className="row__body">
                   <span className="row__title">Left to spend</span>
+                  <span className="row__subtitle">The balance on {connection?.account_label ?? "the account"}</span>
                 </span>
                 <span className="row__trailing budget-figure">{euros(Math.max(0, summary.remainingCents))}</span>
               </div>
@@ -163,14 +176,6 @@ export default function BudgetPage() {
                   {euros(summary.projectedCents)}
                 </span>
               </div>
-              {connection?.balance_cents != null && (
-                <div className="row">
-                  <span className="row__body">
-                    <span className="row__title">Balance on {connection.account_label ?? "the account"}</span>
-                  </span>
-                  <span className="row__trailing budget-figure">{euros(connection.balance_cents)}</span>
-                </div>
-              )}
             </div>
             {connection?.last_synced_at && (
               <p className="section__footer">Updated {new Date(connection.last_synced_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} · updates every hour</p>

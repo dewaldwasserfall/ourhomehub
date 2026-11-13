@@ -5,7 +5,7 @@
  * Runs from the 5-minute job at most once an hour per household, and when
  * someone taps "Update now". Keeps this budget month and the two before it.
  */
-import { budgetPeriod, classifyPayment } from "../budget";
+import { budgetPeriod, classifyPayment, shopKey } from "../budget";
 import { dateKey } from "../calendar/time";
 import { getSupabaseAdminClient } from "../supabase/admin";
 import { BunqError, listAccounts, listPayments, openSession, type BunqCredentials, type BunqSession } from "./api";
@@ -13,7 +13,6 @@ import { BunqError, listAccounts, listPayments, openSession, type BunqCredential
 interface ConnectionRow {
   household_id: string;
   account_id: number | null;
-  budget_cents: number;
   period_start_day: number;
   last_synced_at: string | null;
 }
@@ -31,7 +30,7 @@ export async function syncBudget(householdId: string): Promise<number> {
   const [{ data: conn }, { data: household }] = await Promise.all([
     admin
       .from("bunq_connections")
-      .select("household_id, account_id, budget_cents, period_start_day, last_synced_at")
+      .select("household_id, account_id, period_start_day, last_synced_at")
       .eq("household_id", householdId)
       .single<ConnectionRow>(),
     admin.from("households").select("timezone").eq("id", householdId).single<{ timezone: string }>(),
@@ -49,7 +48,10 @@ export async function syncBudget(householdId: string): Promise<number> {
     const session = await sessionFor(householdId);
     const [payments, accounts] = await Promise.all([listPayments(session, conn.account_id, since), listAccounts(session)]);
 
-    // 2c. Store (upsert by bunq id), classified.
+    // 2c. Store (upsert by bunq id), classified. Every run re-saves the
+    //     whole window, so a change to the rules fixes older rows too.
+    //     Money in is a refund only from somewhere this account has paid.
+    const paidTo = new Set(payments.filter((p) => p.amountCents < 0).map((p) => shopKey(p.counterparty)).filter(Boolean));
     const rows = payments.map((p) => ({
       id: p.id,
       household_id: householdId,
@@ -57,7 +59,7 @@ export async function syncBudget(householdId: string): Promise<number> {
       amount_cents: p.amountCents,
       counterparty: p.counterparty,
       description: p.description,
-      kind: classifyPayment(p.amountCents, p.counterparty, session.holderNames, conn.budget_cents),
+      kind: classifyPayment(p.amountCents, p.counterparty, paidTo),
     }));
     for (let i = 0; i < rows.length; i += 500) {
       const { error } = await admin.from("bunq_payments").upsert(rows.slice(i, i + 500));

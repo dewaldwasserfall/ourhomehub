@@ -2,9 +2,14 @@
  * Grocery budget arithmetic, as pure functions (dates are "YYYY-MM-DD"
  * household days; money is whole cents).
  *
- * The budget month runs from the top-up day (the 26th) to the day before the
- * next one. "On pace" compares what was spent with how far through the month
- * we are: by day 10 of 31, about 10/31 of the budget may be gone.
+ * The budget month runs from the 26th to the 25th. There's no fixed amount:
+ * what's left is the account's live balance, and when it's empty the budget
+ * is finished. What the month "started with" is worked out backwards as
+ * balance + this month's spending (net of refunds), which includes the
+ * monthly top-up and anything left over from last month.
+ *
+ * "On pace" compares what was spent with how far through the month we are:
+ * by day 10 of 31, about 10/31 of the month's money may be gone.
  */
 import { addDays, daysBetweenKeys } from "./calendar/time";
 
@@ -45,21 +50,28 @@ export function budgetPeriod(today: string, startDay: number): BudgetPeriod {
 // -----------------------------------------------------------------------------
 
 /**
- * Money out is spending. Money in is either a refund from a shop or a top-up.
- * Top-ups come from your own accounts, so they're recognised by the sender's
- * name matching the account holder, or by being large (half the budget or
- * more), since no shop refunds that much in one go.
+ * A short key to recognise the same shop on payments in and out: the first
+ * word, letters and digits only ("PICNIC BY BUCKAROO" and "Picnic BV" are
+ * both "picnic").
  */
-export function classifyPayment(
-  amountCents: number,
-  counterpartyName: string | null,
-  holderNames: string[],
-  budgetCents: number,
-): BudgetPayment["kind"] {
+export function shopKey(counterpartyName: string | null): string {
+  const first = (counterpartyName ?? "").trim().split(/\s+/)[0] ?? "";
+  return first.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Money out is spending. Money in is a refund only when it comes from
+ * somewhere the account has paid (Picnic refunding a missing item);
+ * everything else coming in (the monthly top-up from either of you, a
+ * Belastingdienst payment, interest) is money added. The difference matters:
+ * a refund lowers this month's spending, money added doesn't.
+ *
+ * `paidTo` holds shopKey() of every counterparty the account has paid.
+ */
+export function classifyPayment(amountCents: number, counterpartyName: string | null, paidTo: Set<string>): BudgetPayment["kind"] {
   if (amountCents < 0) return "spend";
-  const name = (counterpartyName ?? "").toLowerCase();
-  const fromHolder = holderNames.some((h) => h && name.includes(h.toLowerCase()));
-  return fromHolder || amountCents >= budgetCents / 2 ? "topup" : "refund";
+  const key = shopKey(counterpartyName);
+  return key && paidTo.has(key) ? "refund" : "topup";
 }
 
 // -----------------------------------------------------------------------------
@@ -68,9 +80,11 @@ export function classifyPayment(
 
 export interface BudgetSummary {
   period: BudgetPeriod;
+  /** What the month had to spend: balance + spent so far. */
   budgetCents: number;
   /** Spending minus refunds in this period. */
   spentCents: number;
+  /** The account balance: what's left. */
   remainingCents: number;
   /** What could have been spent by today at an even pace. */
   paceCents: number;
@@ -86,7 +100,13 @@ export interface BudgetSummary {
 /** Within EUR 10 of the pace counts as "on pace". */
 const ON_PACE_MARGIN_CENTS = 1000;
 
-export function summarise(payments: BudgetPayment[], today: string, startDay: number, budgetCents: number, timeZoneDay: (iso: string) => string): BudgetSummary {
+export function summarise(
+  payments: BudgetPayment[],
+  today: string,
+  startDay: number,
+  balanceCents: number,
+  timeZoneDay: (iso: string) => string,
+): BudgetSummary {
   const period = budgetPeriod(today, startDay);
 
   // Step 3a: spending in this period, net of refunds (top-ups don't count).
@@ -98,13 +118,16 @@ export function summarise(payments: BudgetPayment[], today: string, startDay: nu
   }
   spentCents = Math.max(0, spentCents);
 
-  // Step 3b: pace and projection.
+  // Step 3b: what's left is the balance; the month had that plus what's gone.
+  const remainingCents = Math.max(0, balanceCents);
+  const budgetCents = remainingCents + spentCents;
+
+  // Step 3c: pace and projection.
   const paceCents = Math.round((budgetCents * period.day) / period.length);
   const aheadCents = paceCents - spentCents;
   const status = Math.abs(aheadCents) <= ON_PACE_MARGIN_CENTS ? "on" : aheadCents > 0 ? "under" : "over";
   const projectedCents = Math.round((spentCents / period.day) * period.length);
   const daysLeft = period.length - period.day + 1;
-  const remainingCents = budgetCents - spentCents;
 
   return {
     period,

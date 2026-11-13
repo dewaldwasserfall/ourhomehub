@@ -1,5 +1,5 @@
 /**
- * POST /api/bunq/settings   { accountId?, accountLabel?, budgetCents?, periodStartDay? }
+ * POST /api/bunq/settings   { accountId?, accountLabel?, periodStartDay? }
  *
  * The owner chooses the groceries account and sets the budget. Choosing a
  * different account clears the copied payments and syncs again.
@@ -22,7 +22,6 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as {
     accountId?: number;
     accountLabel?: string;
-    budgetCents?: number;
     periodStartDay?: number;
   };
   const update: Record<string, unknown> = {};
@@ -30,11 +29,6 @@ export async function POST(request: NextRequest) {
     if (!Number.isInteger(body.accountId) || body.accountId <= 0) return jsonError(400, "invalid", "Choose an account.");
     update.account_id = body.accountId;
     update.account_label = String(body.accountLabel ?? "").slice(0, 80) || null;
-  }
-  if (body.budgetCents !== undefined) {
-    if (!Number.isInteger(body.budgetCents) || body.budgetCents < 0 || body.budgetCents > 100000000)
-      return jsonError(400, "invalid", "Enter a budget amount.");
-    update.budget_cents = body.budgetCents;
   }
   if (body.periodStartDay !== undefined) {
     if (!Number.isInteger(body.periodStartDay) || body.periodStartDay < 1 || body.periodStartDay > 28)

@@ -1,6 +1,7 @@
 /**
  * Budget settings (owner only): connect bunq, choose the groceries account,
- * set the monthly amount and start day, and choose who can see the budget.
+ * set the start day, and choose who can see the budget. (There's no amount:
+ * the budget is whatever is in the account.)
  */
 "use client";
 
@@ -41,7 +42,6 @@ function Settings() {
   const toast = useToast();
 
   const [accounts, setAccounts] = useState<Account[] | null>(null);
-  const [budget, setBudget] = useState("");
   const [startDay, setStartDay] = useState(26);
   const [access, setAccess] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(members.map((m) => [m.id, m.role === "owner" || m.can_see_finances])),
@@ -57,7 +57,6 @@ function Settings() {
 
   useEffect(() => {
     if (!connection) return;
-    setBudget(String(connection.budget_cents / 100));
     setStartDay(connection.period_start_day);
   }, [connection]);
 
@@ -171,21 +170,6 @@ function Settings() {
           </div>
           <div className="group">
             <label className="form-row">
-              <span className="form-row__label">Per month (€)</span>
-              <input
-                type="number"
-                inputMode="decimal"
-                className="pill-input"
-                style={{ width: 110, textAlign: "right" }}
-                value={budget}
-                onChange={(e) => setBudget(e.target.value)}
-                onBlur={() => {
-                  const cents = Math.round(parseFloat(budget) * 100);
-                  if (Number.isFinite(cents) && cents !== connection.budget_cents) save({ budgetCents: cents });
-                }}
-              />
-            </label>
-            <label className="form-row">
               <span className="form-row__label">Month starts on day</span>
               <select
                 className="pill-input"
@@ -203,7 +187,7 @@ function Settings() {
               </select>
             </label>
           </div>
-          <p className="section__footer">The day you top up the account. The month runs until the day before.</p>
+          <p className="section__footer">The month runs until the day before. What&rsquo;s left is always the account&rsquo;s balance; when it&rsquo;s empty, the budget is finished.</p>
         </section>
       )}
 

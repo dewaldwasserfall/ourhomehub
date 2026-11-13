@@ -3,7 +3,7 @@
  * classification, pace, projection and spending per shop.
  */
 import { describe, expect, it } from "vitest";
-import { budgetPeriod, byMerchant, classifyPayment, euros, merchantName, summarise, type BudgetPayment } from "@/lib/budget";
+import { budgetPeriod, byMerchant, classifyPayment, euros, merchantName, shopKey, summarise, type BudgetPayment } from "@/lib/budget";
 
 const dayOf = (iso: string) => iso.slice(0, 10);
 const pay = (id: number, date: string, cents: number, who: string, kind: BudgetPayment["kind"]): BudgetPayment => ({
@@ -26,10 +26,16 @@ describe("budget month", () => {
 
 describe("classifying payments", () => {
   it("separates spending, refunds and top-ups", () => {
-    expect(classifyPayment(-4512, "ALBERT HEIJN 1234", ["D Wasserfall"], 100000)).toBe("spend");
-    expect(classifyPayment(299, "Jumbo Breda", ["D Wasserfall"], 100000)).toBe("refund");
-    expect(classifyPayment(100000, "Some bank", [], 100000)).toBe("topup");
-    expect(classifyPayment(2500, "D Wasserfall", ["D Wasserfall"], 100000)).toBe("topup");
+    const paidTo = new Set(["albert", "picnic", "dewald"]);
+    expect(classifyPayment(-4512, "ALBERT HEIJN 1234", paidTo)).toBe("spend");
+    // From a shop the account pays: a refund, however it's spelled.
+    expect(classifyPayment(2190, "PICNIC BY BUCKAROO", paidTo)).toBe("refund");
+    // Anyone else: money added (top-ups, Belastingdienst, a big transfer).
+    expect(classifyPayment(10000, "D.M. Wasserfall", paidTo)).toBe("topup");
+    expect(classifyPayment(90000, "A WASSERFALL", paidTo)).toBe("topup");
+    expect(classifyPayment(9800, "Belastingdienst", paidTo)).toBe("topup");
+    expect(shopKey("Picnic BV")).toBe("picnic");
+    expect(shopKey(null)).toBe("");
   });
 });
 
@@ -44,8 +50,11 @@ describe("the month's figures", () => {
   ];
 
   it("works out spent, pace, projection and what's left per day", () => {
-    const s = summarise(payments, "2026-11-13", 26, 100000, dayOf);
+    // EUR 410 still in the account.
+    const s = summarise(payments, "2026-11-13", 26, 41000, dayOf);
     expect(s.spentCents).toBe(59000); // 120 + 300 - 15 + 185
+    expect(s.remainingCents).toBe(41000); // the balance
+    expect(s.budgetCents).toBe(100000); // balance + spent
     expect(s.paceCents).toBe(61290); // 1000 * 19/31
     expect(s.status).toBe("under"); // 22.90 under, beyond the 10 euro margin
     expect(s.projectedCents).toBe(96263); // 590 / 19 * 31
@@ -53,9 +62,19 @@ describe("the month's figures", () => {
   });
 
   it("calls it over pace when spending runs ahead", () => {
-    const s = summarise([...payments, pay(7, "2026-11-12", -20000, "AH", "spend")], "2026-11-13", 26, 100000, dayOf);
+    const s = summarise([...payments, pay(7, "2026-11-12", -20000, "AH", "spend")], "2026-11-13", 26, 21000, dayOf);
     expect(s.status).toBe("over");
     expect(s.aheadCents).toBeLessThan(0);
+  });
+
+  it("counts last month's leftover in this month's money, and stops at an empty account", () => {
+    // EUR 50 left over from October on top of the top-up: 460 in the account now.
+    const s = summarise(payments, "2026-11-13", 26, 46000, dayOf);
+    expect(s.budgetCents).toBe(105000);
+    expect(s.remainingCents).toBe(46000);
+    // Empty account: nothing left, nothing per day.
+    const empty = summarise(payments, "2026-11-13", 26, 0, dayOf);
+    expect(empty).toMatchObject({ remainingCents: 0, perDayLeftCents: 0, budgetCents: 59000 });
   });
 
   it("groups spending per shop", () => {
