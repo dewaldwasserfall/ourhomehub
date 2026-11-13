@@ -141,10 +141,19 @@ beforeAll(async () => {
     "20261112000600_calendar.sql",
     "20261113000700_today_routines_roles.sql",
     "20261113000800_member_themes.sql",
+    "20261113000900_notifications.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
-    await db.exec(readFileSync(path.join(MIGRATIONS_DIR, file), "utf8"));
+    let sql = readFileSync(path.join(MIGRATIONS_DIR, file), "utf8");
+    // The notifications job needs pg_net, pg_cron and pgcrypto, which PGlite
+    // doesn't have: run everything except creating the secret and the jobs.
+    if (file.includes("notifications")) {
+      sql = sql
+        .replace(/create extension if not exists pg_net[\s\S]*?(?=create or replace function public\.notify_check_secret)/, "")
+        .replace(/-- 5b\.[\s\S]*?(?=-- -{10,}\n-- STEP 6)/, "");
+    }
+    await db.exec(sql);
   }
 
   for (const u of Object.values(USERS)) {
@@ -902,5 +911,51 @@ describe("themes", () => {
       { user_id: USERS.dewald.id, theme_accent: "basil", theme_mode: "system" },
       { user_id: USERS.kid.id, theme_accent: "lavender", theme_mode: "dark" },
     ]);
+  });
+});
+
+describe("notifications", () => {
+  /** Run statements as the server (service-role key). */
+  async function actAsServer() {
+    await db.exec(`reset role; set role service_role;`);
+  }
+
+  it("registers a device for the signed-in person and moves it if someone else signs in on it", async () => {
+    await actAs("partner");
+    await db.query(`select public.save_push_subscription('https://push.example/abc', 'key', 'auth', 'iPhone')`);
+    expect(await all(`select endpoint from public.push_subscriptions`)).toHaveLength(1);
+
+    await actAs("kid");
+    expect(await all(`select endpoint from public.push_subscriptions`)).toHaveLength(0); // not theirs
+    await db.query(`select public.save_push_subscription('https://push.example/abc', 'key2', 'auth2', 'iPhone')`);
+    expect(await all(`select endpoint from public.push_subscriptions`)).toHaveLength(1);
+
+    await actAs("partner");
+    expect(await all(`select endpoint from public.push_subscriptions`)).toHaveLength(0);
+    await expect(
+      db.query(`insert into public.push_subscriptions (member_id, household_id, endpoint, p256dh, auth) values (gen_random_uuid(), $1, 'https://x', 'k', 'a')`, [householdId]),
+    ).rejects.toThrow();
+  });
+
+  it("lets each person keep their own preferences only", async () => {
+    await actAs("kid");
+    const kidMember = (await one<{ id: string }>(`select public.current_member_id() as id`)).id;
+    await db.query(
+      `insert into public.notification_prefs (member_id, household_id, routine_nudge, routine_nudge_time) values ($1, $2, true, '07:40')`,
+      [kidMember, householdId],
+    );
+    await actAs("partner");
+    expect(await all(`select * from public.notification_prefs`)).toHaveLength(0);
+    await expect(
+      db.query(`insert into public.notification_prefs (member_id, household_id) values ($1, $2)`, [kidMember, householdId]),
+    ).rejects.toThrow();
+  });
+
+  it("keeps the send log and the cron secret check server-only", async () => {
+    await actAs("dewald");
+    await expect(db.query(`select public.notify_check_secret('guess')`)).rejects.toThrow(/permission denied/);
+    expect(await all(`select * from public.notification_log`)).toHaveLength(0);
+    await actAsServer();
+    expect((await one<{ ok: boolean }>(`select public.notify_check_secret('guess') as ok`)).ok).toBe(false);
   });
 });

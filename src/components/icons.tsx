@@ -243,3 +243,11 @@ export const GripIcon = (p: IconProps) => (
     <path d="M6 9h12M6 15h12" />
   </Svg>
 );
+
+/** Notifications */
+export const BellIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6 16.5V11a6 6 0 0112 0v5.5l1.5 2H4.5z" />
+    <path d="M10 20.5a2.2 2.2 0 004 0" />
+  </Svg>
+);

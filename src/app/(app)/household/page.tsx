@@ -15,6 +15,7 @@ import { Avatar } from "@/components/avatar";
 import { FamilyCalendarCard } from "@/components/family-calendar-card";
 import { useHousehold } from "@/components/household-context";
 import {
+  BellIcon,
   ChevronRightIcon,
   ChoreIcon,
   HolidayIcon,
@@ -144,8 +145,23 @@ export default function HouseholdPage() {
         </div>
       </section>
 
-      {/* Everyone's own colours */}
+      {/* Everyone's own colours and reminders */}
       <ThemePicker />
+
+      <section className="section">
+        <div className="group">
+          <Link href="/household/notifications" className="row row--link">
+            <span className="row__icon" style={{ background: "#ff3b30" }}>
+              <BellIcon size={19} strokeWidth={2} />
+            </span>
+            <span className="row__body">
+              <span className="row__title">Notifications</span>
+              <span className="row__subtitle">Reminders on your phone, just for you</span>
+            </span>
+            <ChevronRightIcon className="row__chevron" size={16} />
+          </Link>
+        </div>
+      </section>
 
       {/* The household's plan (adults) */}
       {meIsAdult && (

@@ -7,6 +7,7 @@
  */
 import { redirect } from "next/navigation";
 import { HouseholdProvider } from "@/components/household-context";
+import { ServiceWorker } from "@/components/service-worker";
 import { Sidebar } from "@/components/sidebar";
 import { TabBar } from "@/components/tab-bar";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
@@ -41,6 +42,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <Sidebar />
       <div className="app-main">{children}</div>
       <TabBar />
+      <ServiceWorker />
     </HouseholdProvider>
   );
 }
