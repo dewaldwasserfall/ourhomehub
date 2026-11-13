@@ -25,9 +25,10 @@ import {
   RhythmIcon,
   RoutineIcon,
   SunIcon,
+  WalletIcon,
   ZoneIcon,
 } from "./icons";
-import { roleLabel } from "@/lib/roles";
+import { canSeeFinances, roleLabel } from "@/lib/roles";
 
 const MAIN = [
   { href: "/", label: "Today", Icon: SunIcon, match: (p: string) => p === "/" },
@@ -69,6 +70,13 @@ export function Sidebar() {
 
       {/* Step 3: main sections */}
       <div className="sidebar__group">{MAIN.map(({ href, label, Icon, match }) => link(href, label, Icon, match(pathname)))}</div>
+
+      {/* Step 3b: money (only for those the owner gave access) */}
+      {canSeeFinances(me) && (
+        <div className="sidebar__group">
+          {link("/budget", "Groceries budget", WalletIcon, pathname.startsWith("/budget"))}
+        </div>
+      )}
 
       {/* Step 4: the plan (adults only, like the Household tab) */}
       {meIsAdult && (

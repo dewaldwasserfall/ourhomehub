@@ -23,12 +23,13 @@ import {
   RefreshIcon,
   RoutineIcon,
   ShareIcon,
+  WalletIcon,
   ZoneIcon,
 } from "@/components/icons";
 import { Navbar } from "@/components/navbar";
 import { ThemePicker } from "@/components/theme-picker";
 import { friendlyError } from "@/lib/errors";
-import { roleLabel } from "@/lib/roles";
+import { canSeeFinances, roleLabel } from "@/lib/roles";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 /** The four planning screens, each a row with a coloured icon. */
@@ -164,6 +165,24 @@ export default function HouseholdPage() {
           </Link>
         </div>
       </section>
+
+      {/* Grocery budget (only for those the owner gave access) */}
+      {canSeeFinances(me) && (
+        <section className="section">
+          <div className="group">
+            <Link href="/budget" className="row row--link">
+              <span className="row__icon" style={{ background: "#0a84ff" }}>
+                <WalletIcon size={19} strokeWidth={2} />
+              </span>
+              <span className="row__body">
+                <span className="row__title">Groceries budget</span>
+                <span className="row__subtitle">From the bunq groceries account</span>
+              </span>
+              <ChevronRightIcon className="row__chevron" size={16} />
+            </Link>
+          </div>
+        </section>
+      )}
 
       {/* The household's plan (adults) */}
       {meIsAdult && (

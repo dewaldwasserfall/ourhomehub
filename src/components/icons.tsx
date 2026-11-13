@@ -260,3 +260,11 @@ export const BinIcon = (p: IconProps) => (
     <circle cx="16" cy="20" r="1" />
   </Svg>
 );
+
+/** Grocery budget: a wallet */
+export const WalletIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3.5" y="6" width="17" height="13" rx="3" />
+    <path d="M3.5 9.5h17M15.5 14h2" />
+  </Svg>
+);

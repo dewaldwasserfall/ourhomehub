@@ -144,6 +144,7 @@ beforeAll(async () => {
     "20261113000900_notifications.sql",
     "20261113001000_bin_days.sql",
     "20261113001100_bins_morning.sql",
+    "20261113001200_grocery_budget.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -975,5 +976,41 @@ describe("bin days", () => {
 
     await actAs("stranger");
     expect(await all(`select id from public.bin_days`)).toHaveLength(0);
+  });
+});
+
+describe("grocery budget", () => {
+  it("is visible only to members the owner gave access, and only the owner can grant it", async () => {
+    await actAsAdmin();
+    const partner = (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS.partner.id])).id;
+    const kid = (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS.kid.id])).id;
+    await db.query(`insert into public.bunq_connections (household_id, budget_cents) values ($1, 100000)`, [householdId]);
+    await db.query(
+      `insert into public.bunq_payments (id, household_id, created_at, amount_cents, counterparty, kind) values (1, $1, now(), -4512, 'AH', 'spend')`,
+      [householdId],
+    );
+
+    // Owner: sees it.
+    await actAs("dewald");
+    expect(await all(`select id from public.bunq_payments`)).toHaveLength(1);
+
+    // Adult without access: sees nothing, and can't give themselves access.
+    await actAs("partner");
+    expect(await all(`select id from public.bunq_payments`)).toHaveLength(0);
+    expect(await all(`select household_id from public.bunq_connections`)).toHaveLength(0);
+    await expect(db.query(`update public.members set can_see_finances = true where id = $1`, [partner])).rejects.toThrow(/owner_only/);
+    await expect(db.query(`select public.set_finance_access($1, true)`, [partner])).rejects.toThrow(/owner_only/);
+
+    // The owner grants it: now they see it.
+    await actAs("dewald");
+    await db.query(`select public.set_finance_access($1, true)`, [partner]);
+    await expect(db.query(`select public.set_finance_access($1, true)`, [kid])).rejects.toThrow(/member_not_in_household/);
+    await actAs("partner");
+    expect(await all(`select id from public.bunq_payments`)).toHaveLength(1);
+
+    // Children: never, and the browser can't read the credentials RPC.
+    await actAs("kid");
+    expect(await all(`select id from public.bunq_payments`)).toHaveLength(0);
+    await expect(db.query(`select public.bunq_get_credentials($1)`, [householdId])).rejects.toThrow(/permission denied/);
   });
 });

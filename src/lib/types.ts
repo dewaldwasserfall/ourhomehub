@@ -48,6 +48,8 @@ export interface Member {
   /** Accent colour id (src/lib/themes.ts) and Light / Dark / Automatic. */
   theme_accent: string;
   theme_mode: "system" | "light" | "dark";
+  /** Sees the grocery budget (owner-granted; never children). */
+  can_see_finances: boolean;
   created_at: string;
 }
 

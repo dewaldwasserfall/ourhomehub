@@ -33,8 +33,11 @@ import type { Occurrence } from "@/lib/calendar/types";
 import { useCalendar } from "@/lib/calendar/use-calendar";
 import { friendlyError } from "@/lib/errors";
 import { choreDueOn, describeDay, MODE_LABELS, stepApplies, TIME_OF_DAY_LABELS, timeOfDayAt, zoneFortnight } from "@/lib/plan";
+import { BudgetBar, statusText } from "@/components/budget-bar";
+import { euros } from "@/lib/budget";
 import { binColour, binList, binsAround } from "@/lib/bins";
-import { canTick } from "@/lib/roles";
+import { useBudget } from "@/lib/use-budget";
+import { canSeeFinances, canTick } from "@/lib/roles";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { CompletionKind, DayInfo, ListEntry, Member, TimeOfDay } from "@/lib/types";
 import { usePlanData } from "@/lib/use-plan-data";
@@ -140,6 +143,8 @@ export default function TodayPage() {
   const [todos, setTodos] = useState<Array<ListEntry & { list: { name: string } }>>([]);
   const [groceries, setGroceries] = useState<{ id: string; name: string; open: number; suggested: number } | null>(null);
   const [showEveryone, setShowEveryone] = useState(false);
+  // Grocery budget: only loads for members the owner gave access.
+  const budget = useBudget(household.id, tz, canSeeFinances(me));
 
   // Step 2c: today's mode, to-dos and the groceries line.
   const loadDay = useCallback(async () => {
@@ -616,6 +621,22 @@ export default function TodayPage() {
           <p className="section__footer">
             Until {describeDay(zone.fortnight.end, today)}, day {zone.fortnight.day} of 14.
           </p>
+        </section>
+      )}
+
+      {/* Grocery budget (only for those who can see finances) */}
+      {budget.summary && (
+        <section className="section">
+          <Link href="/budget" className="group budget-card">
+            <span className="budget-card__top">
+              <span className="row__title">Groceries budget</span>
+              <span className={`budget-status budget-status--${budget.summary.status}`}>{statusText(budget.summary)}</span>
+            </span>
+            <BudgetBar summary={budget.summary} />
+            <span className="row__subtitle">
+              {euros(budget.summary.spentCents)} of {euros(budget.summary.budgetCents)} · {euros(budget.summary.perDayLeftCents)} a day left
+            </span>
+          </Link>
         </section>
       )}
 

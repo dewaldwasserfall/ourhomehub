@@ -15,6 +15,8 @@ export interface Caller {
   isOwner: boolean;
   /** Owners and adults; children may only read and tick their own things. */
   isAdult: boolean;
+  /** Sees the grocery budget (owner-granted, adults only). */
+  canSeeFinances: boolean;
   timeZone: string;
 }
 
@@ -24,7 +26,9 @@ export function jsonError(status: number, code: string, message: string) {
   return NextResponse.json({ error: code, message }, { status });
 }
 
-export async function getCaller(opts: { ownerOnly?: boolean; adultOnly?: boolean } = {}): Promise<CallerResult> {
+export async function getCaller(
+  opts: { ownerOnly?: boolean; adultOnly?: boolean; financeOnly?: boolean } = {},
+): Promise<CallerResult> {
   const supabase = await getSupabaseServerClient();
 
   // Step 1: signed in?
@@ -42,7 +46,11 @@ export async function getCaller(opts: { ownerOnly?: boolean; adultOnly?: boolean
 
   // Step 3: their member row and the household's time zone.
   const [{ data: member }, { data: household }] = await Promise.all([
-    supabase.from("members").select("id, role").eq("user_id", user.id).single<{ id: string; role: string }>(),
+    supabase
+      .from("members")
+      .select("id, role, can_see_finances")
+      .eq("user_id", user.id)
+      .single<{ id: string; role: string; can_see_finances: boolean }>(),
     supabase.from("households").select("timezone").eq("id", householdId).single<{ timezone: string }>(),
   ]);
   if (!member) return { ok: false, response: jsonError(403, "not_in_household", "This account doesn't have access to the household.") };
@@ -53,6 +61,7 @@ export async function getCaller(opts: { ownerOnly?: boolean; adultOnly?: boolean
     householdId: householdId as string,
     isOwner: member.role === "owner",
     isAdult: member.role === "owner" || member.role === "adult",
+    canSeeFinances: member.role === "owner" || (member.role === "adult" && member.can_see_finances),
     timeZone: household?.timezone ?? "Europe/Amsterdam",
   };
 
@@ -63,6 +72,10 @@ export async function getCaller(opts: { ownerOnly?: boolean; adultOnly?: boolean
   // Step 5: adult-only actions (calendar changes, holiday import).
   if (opts.adultOnly && !caller.isAdult) {
     return { ok: false, response: jsonError(403, "adults_only", "Ask a parent to make this change.") };
+  }
+  // Step 6: the grocery budget (members the owner gave access to).
+  if (opts.financeOnly && !caller.canSeeFinances) {
+    return { ok: false, response: jsonError(403, "finance_only", "Only the people the owner chose can see the budget.") };
   }
   return { ok: true, caller };
 }
