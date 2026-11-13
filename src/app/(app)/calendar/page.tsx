@@ -37,7 +37,7 @@ const dayMonth = fmt({ day: "numeric", month: "long" });
 const monthYear = fmt({ month: "long", year: "numeric" });
 
 export default function CalendarPage() {
-  const { household, me, memberByUserId, members } = useHousehold();
+  const { household, me, memberByUserId, members, meIsAdult } = useHousehold();
   const tz = household.timezone;
   const { rows, status, loading, syncing, sync, createEvent, updateEvent, deleteEvent } = useCalendar(household.id);
   const toast = useToast();
@@ -108,8 +108,9 @@ export default function CalendarPage() {
       <button
         key={`${occ.key}:${day}`}
         type="button"
-        className="row row--pressable event-row"
-        onClick={() => setSheet({ kind: "existing", occurrence: occ })}
+        className={`row event-row ${meIsAdult ? "row--pressable" : ""}`}
+        // Children read the calendar; only adults open an event to change it.
+        onClick={meIsAdult ? () => setSheet({ kind: "existing", occurrence: occ }) : undefined}
       >
         <span className="event-row__time">
           {occ.allDay ? (
@@ -147,14 +148,16 @@ export default function CalendarPage() {
       <button type="button" className="nav-button nav-button--icon" aria-label="Sync with Google Calendar" onClick={onSync} disabled={syncing}>
         <RefreshIcon size={21} style={syncing ? { animation: "spin 0.8s linear infinite" } : undefined} />
       </button>
-      <button
-        type="button"
-        className="nav-button nav-button--icon"
-        aria-label="New event"
-        onClick={() => setSheet({ kind: "new", day: view === "month" ? selectedDay : today })}
-      >
-        <PlusIcon size={24} />
-      </button>
+      {meIsAdult && (
+        <button
+          type="button"
+          className="nav-button nav-button--icon"
+          aria-label="New event"
+          onClick={() => setSheet({ kind: "new", day: view === "month" ? selectedDay : today })}
+        >
+          <PlusIcon size={24} />
+        </button>
+      )}
     </>
   ) : undefined;
 
@@ -325,6 +328,10 @@ export default function CalendarPage() {
                     const list = groupByDay(expandForRange(rows, selectedDay, selectedDay, tz), selectedDay, selectedDay).get(selectedDay);
                     return list?.length ? (
                       list.map((occ) => eventRow(occ, selectedDay))
+                    ) : !meIsAdult ? (
+                      <div className="row" style={{ color: "var(--ink-2)" }}>
+                        <span className="row__body">Nothing on this day</span>
+                      </div>
                     ) : (
                       <button
                         type="button"

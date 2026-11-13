@@ -195,3 +195,51 @@ export const PinIcon = (p: IconProps) => (
     <circle cx="12" cy="10" r="2.3" />
   </Svg>
 );
+
+/** Tab: Today (a sun on the horizon) */
+export const SunIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2.8v2.1M12 19.1v2.1M2.8 12h2.1M19.1 12h2.1M5.5 5.5l1.5 1.5M17 17l1.5 1.5M5.5 18.5L7 17M17 7l1.5-1.5" />
+  </Svg>
+);
+
+/** Routines: a morning checklist */
+export const RoutineIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="4.5" y="3.5" width="15" height="17" rx="3" />
+    <path d="M8 9l1.4 1.4L12 7.8M8 15l1.4 1.4L12 13.8M14 9.5h2.5M14 15.5h2.5" />
+  </Svg>
+);
+
+/** Zones: the house split into areas */
+export const ZoneIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3.5" y="3.5" width="17" height="17" rx="3" />
+    <path d="M12 3.5v17M3.5 12H12" />
+  </Svg>
+);
+
+/** Chores: a sponge-and-sparkle cleaning mark */
+export const ChoreIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3.5" y="11" width="13" height="8.5" rx="2.5" />
+    <path d="M6.5 11V9a3.5 3.5 0 017 0v2" />
+    <path d="M18.5 4v4M16.5 6h4" />
+  </Svg>
+);
+
+/** School holidays: a suitcase */
+export const HolidayIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3.5" y="7.5" width="17" height="12" rx="3" />
+    <path d="M9 7.5V5.8A1.3 1.3 0 0110.3 4.5h3.4A1.3 1.3 0 0115 5.8v1.7M9 7.5v12M15 7.5v12" />
+  </Svg>
+);
+
+/** Reorder handle */
+export const GripIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6 9h12M6 15h12" />
+  </Svg>
+);

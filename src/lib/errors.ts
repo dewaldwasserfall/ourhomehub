@@ -12,6 +12,14 @@ const MESSAGES: Record<string, string> = {
   list_not_found: "That list no longer exists. Go back to Lists and pick another.",
   empty_text: "Type something to add.",
   not_authenticated: "Your session ended. Sign in again.",
+  // Phase 3: roles, routines, chores and holidays.
+  adults_only: "Ask a parent to make this change.",
+  children_can_only_tick: "You can tick this off, but only a parent can change it.",
+  not_assigned_to_you: "This one is for someone else to tick off.",
+  member_not_in_household: "That person isn't in this household any more. Pick someone else.",
+  item_not_found: "That was deleted on another phone. Pull down to refresh.",
+  zone_rotation_start_check: "The rotation has to start on a Monday.",
+  day_overrides_check: "The last day can't be before the first day.",
 };
 
 export function friendlyError(error: unknown): string {

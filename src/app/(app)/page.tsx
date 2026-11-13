@@ -1,245 +1,597 @@
 /**
- * Lists tab (home screen).
+ * Today: the home screen. What each person needs to see and do today.
  *
- * Shows every list with what's open on it, a short "Coming up" preview of
- * items the engine expects you'll need soon, and a way to add a list.
+ * Top to bottom:
+ *   1. Header       greeting, the date and today's mode (School day /
+ *                   "Autumn holiday, day 3 of 9" / Weekend)
+ *   2. Up next      today's calendar events, the next one highlighted;
+ *                   tomorrow's first event once today's are over
+ *   3. Routines     the routines for this time of day open, others folded
+ *   4. To do        to-dos and chores that are due, overdue or undated
+ *   5. Zone         this fortnight's zone, progress and the next tasks
+ *   6. Groceries    one line that opens the list
+ *
+ * Who sees what: things assigned to someone show only on their Today;
+ * unassigned things show on every adult's Today and disappear for everyone
+ * once ticked. Children see only what is theirs. Adults can switch on
+ * "Everyone's" to see the whole household's day.
  */
 "use client";
 
+import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Avatar } from "@/components/avatar";
+import { CheckCircle } from "@/components/check-circle";
 import { useHousehold } from "@/components/household-context";
-import { CartIcon, ChecklistIcon, ChevronRightIcon, GlowSparkle, PlusIcon } from "@/components/icons";
+import { CartIcon, ChevronDownIcon, ChevronRightIcon, GlowSparkle } from "@/components/icons";
 import { Navbar } from "@/components/navbar";
-import { Segmented } from "@/components/segmented";
-import { Sheet } from "@/components/sheet";
+import { useToast } from "@/components/toast";
+import { expandForRange, groupByDay } from "@/lib/calendar/expand";
+import { addDays, dateKey, daysBetweenKeys, timeKey, wallTimeOf } from "@/lib/calendar/time";
+import type { Occurrence } from "@/lib/calendar/types";
+import { useCalendar } from "@/lib/calendar/use-calendar";
 import { friendlyError } from "@/lib/errors";
-import { describeDue, MIN_CONFIDENCE } from "@/lib/rhythm";
+import { choreDueOn, describeDay, MODE_LABELS, stepApplies, TIME_OF_DAY_LABELS, timeOfDayAt, zoneFortnight } from "@/lib/plan";
+import { canTick } from "@/lib/roles";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import type { ItemPattern, List, ListType } from "@/lib/types";
+import type { CompletionKind, DayInfo, ListEntry, Member, TimeOfDay } from "@/lib/types";
+import { usePlanData } from "@/lib/use-plan-data";
 
-interface ListSummary extends List {
-  open: number;
-  suggested: number;
-}
+/** How long a ticked row shows its check before it moves or disappears. */
+const TICK_SETTLE_MS = 650;
 
-type UpcomingItem = ItemPattern & { item: { display_name: string } };
+const longDate = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+const TIME_ORDER: Record<TimeOfDay, number> = { morning: 0, afternoon: 1, evening: 2 };
 
-/** Greeting that matches the time of day. */
-function greeting(name: string) {
-  const hour = new Date().getHours();
+/** Greeting that matches the household's time of day. */
+function greeting(hour: number, name: string) {
   const part = hour < 5 ? "Good night" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-  return `${part}, ${name}`;
+  return `${part}, ${name.split(" ")[0]}`;
 }
 
-export default function ListsPage() {
+/** One thing to tick on Today (a step, a to-do, a chore or a zone task). */
+interface TickItem {
+  key: string;
+  kind: CompletionKind | "todo";
+  id: string;
+  title: string;
+  subtitle?: string;
+  overdue?: boolean;
+  assignee: string | null;
+  done: boolean;
+}
+
+// -----------------------------------------------------------------------------
+// Step 1: a tickable row
+// -----------------------------------------------------------------------------
+
+function TickRow({
+  item,
+  checked,
+  canToggle,
+  assignee,
+  onToggle,
+}: {
+  item: TickItem;
+  checked: boolean;
+  canToggle: boolean;
+  assignee?: Member;
+  onToggle: () => void;
+}) {
+  return (
+    <motion.div
+      className="row-wrap"
+      layout="position"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0, height: 0 }}
+      transition={{ type: "spring", stiffness: 500, damping: 42, opacity: { duration: 0.18 } }}
+    >
+      <div className={`row ${item.done ? "row--done" : ""}`}>
+        {canToggle ? (
+          <CheckCircle checked={checked} onToggle={onToggle} label={checked ? `Mark ${item.title} as not done` : `Tick off ${item.title}`} />
+        ) : (
+          <span className="check-placeholder" aria-hidden="true" />
+        )}
+        <span className="row__body">
+          <span className="row__title">{item.title}</span>
+          {item.subtitle && (
+            <span className="row__subtitle">
+              <span className={item.overdue ? "due due--overdue" : "due"}>{item.subtitle}</span>
+            </span>
+          )}
+        </span>
+        {assignee && (
+          <span className="row__trailing">
+            <Avatar member={assignee} size="mini" />
+          </span>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Step 2: the screen
+// -----------------------------------------------------------------------------
+
+export default function TodayPage() {
   const supabase = getSupabaseBrowserClient();
-  const { me, household } = useHousehold();
-  const [lists, setLists] = useState<ListSummary[] | null>(null);
-  const [upcoming, setUpcoming] = useState<UpcomingItem[]>([]);
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newType, setNewType] = useState<ListType>("shopping");
-  const [error, setError] = useState<string | null>(null);
+  const { household, me, meIsAdult, memberById } = useHousehold();
+  const tz = household.timezone;
+  const toast = useToast();
 
-  // Step 1: load lists with counts, plus the next few predicted items.
-  const load = useCallback(async () => {
-    await supabase.rpc("refresh_suggestions");
-    const [listsRes, openRes, upcomingRes] = await Promise.all([
-      supabase.from("lists").select("*").order("sort_order").order("created_at"),
-      supabase.from("list_entries").select("list_id, source").eq("status", "open"),
-      supabase
-        .from("item_patterns")
-        .select("*, item:items(display_name)")
-        .not("next_expected_at", "is", null)
-        .gte("confidence", MIN_CONFIDENCE)
-        .gt("next_expected_at", new Date().toISOString())
-        .order("next_expected_at")
-        .limit(3),
-    ]);
-    const openLines = (openRes.data ?? []) as Array<{ list_id: string; source: string }>;
-    setLists(
-      ((listsRes.data ?? []) as List[]).map((l) => ({
-        ...l,
-        open: openLines.filter((o) => o.list_id === l.id).length,
-        suggested: openLines.filter((o) => o.list_id === l.id && o.source === "suggested").length,
-      })),
-    );
-    setUpcoming((upcomingRes.data ?? []) as UpcomingItem[]);
-  }, [supabase]);
-
+  // Step 2a: "now" in the household's zone. Re-evaluated every minute so the
+  //          next event and the day itself roll over without a reload.
+  const [now, setNow] = useState(() => new Date());
   useEffect(() => {
-    load();
-    const onVisible = () => document.visibilityState === "visible" && load();
-    document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [load]);
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  const today = dateKey(now, tz);
+  const hour = wallTimeOf(now, tz).hour;
 
-  // Step 2: create a list.
-  async function createList() {
-    const name = newName.trim();
-    if (!name) return;
-    const { error: insertError } = await supabase.from("lists").insert({
-      household_id: household.id,
-      name,
-      type: newType,
-      sort_order: (lists?.length ?? 0) + 1,
-    });
-    if (insertError) {
-      setError(friendlyError(insertError));
-      return;
+  // Step 2b: data. Completions from two weeks back cover this fortnight's zone.
+  const plan = usePlanData(household.id, addDays(today, -14));
+  const calendar = useCalendar(household.id);
+  const [dayInfo, setDayInfo] = useState<DayInfo | null>(null);
+  const [todos, setTodos] = useState<Array<ListEntry & { list: { name: string } }>>([]);
+  const [groceries, setGroceries] = useState<{ id: string; name: string; open: number; suggested: number } | null>(null);
+  const [showEveryone, setShowEveryone] = useState(false);
+
+  // Step 2c: today's mode, to-dos and the groceries line.
+  const loadDay = useCallback(async () => {
+    const [infoRes, todoRes, listRes, groceryRes] = await Promise.all([
+      supabase.rpc("day_info", { p_date: today }),
+      supabase
+        .from("list_entries")
+        .select("*, list:lists!inner(name, type)")
+        .eq("status", "open")
+        .eq("list.type", "todo"),
+      supabase.from("lists").select("id, name").eq("is_default", true).maybeSingle<{ id: string; name: string }>(),
+      supabase.from("list_entries").select("list_id, source, list:lists!inner(is_default)").eq("status", "open").eq("list.is_default", true),
+    ]);
+    setDayInfo(((infoRes.data ?? []) as DayInfo[])[0] ?? null);
+    setTodos((todoRes.data ?? []) as Array<ListEntry & { list: { name: string } }>);
+    if (listRes.data) {
+      const lines = (groceryRes.data ?? []) as Array<{ source: string }>;
+      setGroceries({
+        ...listRes.data,
+        open: lines.length,
+        suggested: lines.filter((l) => l.source === "suggested").length,
+      });
     }
-    setSheetOpen(false);
-    setNewName("");
-    setNewType("shopping");
-    setError(null);
-    load();
-  }
+  }, [supabase, today]);
+
+  // Reload when the day changes, when holidays change, and live on list changes.
+  const overridesVersion = plan.overrides.map((o) => `${o.id}:${o.start_date}:${o.end_date}:${o.kind}`).join("|");
+  useEffect(() => {
+    loadDay();
+  }, [loadDay, overridesVersion]);
+  useEffect(() => {
+    const channel = supabase
+      .channel(`today:${household.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "list_entries", filter: `household_id=eq.${household.id}` }, () => loadDay())
+      .subscribe();
+    const onVisible = () => document.visibilityState === "visible" && (setNow(new Date()), loadDay());
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, household.id, loadDay]);
+
+  const mode = dayInfo?.mode ?? null;
+
+  /** Should a thing assigned to `assignee` show on my Today? */
+  const isMine = useCallback(
+    (assignee: string | null) => {
+      if (showEveryone && meIsAdult) return true;
+      if (assignee === me.id) return true;
+      return assignee === null && meIsAdult;
+    },
+    [showEveryone, meIsAdult, me.id],
+  );
+
+  const isDone = useCallback(
+    (kind: CompletionKind, id: string, forDate: string) =>
+      plan.completions.some((c) => c.kind === kind && c.item_id === id && c.for_date === forDate),
+    [plan.completions],
+  );
+
+  // ---------------------------------------------------------------------------
+  // Step 3: work out each section
+  // ---------------------------------------------------------------------------
+
+  // 3a. Up next: today's events; tomorrow's first once today's are over.
+  const events = useMemo(() => {
+    const tomorrow = addDays(today, 1);
+    const byDay = groupByDay(expandForRange(calendar.rows, today, tomorrow, tz), today, tomorrow);
+    const todays = byDay.get(today) ?? [];
+    const upcoming = todays.filter((o) => o.allDay || (o.end && o.end > now));
+    const nextTimed = upcoming.find((o) => !o.allDay);
+    return {
+      today: todays,
+      nextKey: nextTimed?.key,
+      allPast: todays.length > 0 && upcoming.length === 0,
+      tomorrowFirst: upcoming.length === 0 ? (byDay.get(tomorrow) ?? [])[0] : undefined,
+    };
+  }, [calendar.rows, today, tz, now]);
+
+  // 3b. Routines: steps that apply today and are mine, grouped by routine.
+  const routines = useMemo(() => {
+    if (!mode) return [];
+    return plan.routines
+      .filter((r) => r.active)
+      .map((routine) => {
+        const items: TickItem[] = plan.steps
+          .filter((s) => s.routine_id === routine.id && stepApplies(s, today, mode))
+          .map((s) => {
+            const assignee = s.assigned_to ?? routine.owner_member;
+            return { key: `step:${s.id}`, kind: "step" as const, id: s.id, title: s.title, assignee, done: isDone("step", s.id, today) };
+          })
+          .filter((i) => isMine(i.assignee));
+        return { routine, items };
+      })
+      .filter((r) => r.items.length > 0)
+      .sort((a, b) => TIME_ORDER[a.routine.time_of_day] - TIME_ORDER[b.routine.time_of_day] || a.routine.sort_order - b.routine.sort_order);
+  }, [plan.routines, plan.steps, mode, today, isDone, isMine]);
+
+  // 3c. To do: to-dos (due, overdue or undated) and chores that are due.
+  const toDo = useMemo(() => {
+    const items: Array<TickItem & { sortKey: string }> = [];
+    for (const t of todos) {
+      if (t.due_date && t.due_date > today) continue;
+      if (!isMine(t.assigned_to)) continue;
+      items.push({
+        key: `todo:${t.id}`,
+        kind: "todo",
+        id: t.id,
+        title: t.text,
+        subtitle: t.due_date ? (t.due_date < today ? `Due ${describeDay(t.due_date, today).toLowerCase()}` : "Due today") : t.list.name,
+        overdue: !!t.due_date && t.due_date < today,
+        assignee: t.assigned_to,
+        done: false,
+        sortKey: t.due_date ?? "9999",
+      });
+    }
+    if (mode) {
+      for (const c of plan.chores) {
+        if (!choreDueOn(c, today, mode) || !isMine(c.assigned_to)) continue;
+        const late = daysBetweenKeys(c.next_due, today);
+        items.push({
+          key: `chore:${c.id}`,
+          kind: "chore",
+          id: c.id,
+          title: c.title,
+          subtitle: late > 0 ? `Chore, due ${describeDay(c.next_due, today).toLowerCase()}` : "Chore",
+          overdue: late > 0,
+          assignee: c.assigned_to,
+          done: false,
+          sortKey: c.next_due,
+        });
+      }
+    }
+    return items.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+  }, [todos, plan.chores, mode, today, isMine]);
+
+  // 3d. This fortnight's zone.
+  const zone = useMemo(() => {
+    if (!household.zone_rotation_start) return null;
+    const fortnight = zoneFortnight(household.zone_rotation_start, today, plan.zones.length);
+    if (!fortnight) return null;
+    const active = plan.zones[fortnight.index];
+    const tasks = plan.zoneTasks.filter((t) => t.zone_id === active.id);
+    const items: TickItem[] = tasks.map((t) => ({
+      key: `zone:${t.id}`,
+      kind: "zone_task" as const,
+      id: t.id,
+      title: t.title,
+      assignee: t.assigned_to,
+      done: isDone("zone_task", t.id, fortnight.start),
+    }));
+    return { zone: active, fortnight, total: items.length, doneCount: items.filter((i) => i.done).length, mine: items.filter((i) => isMine(i.assignee)) };
+  }, [household.zone_rotation_start, today, plan.zones, plan.zoneTasks, isDone, isMine]);
+
+  // ---------------------------------------------------------------------------
+  // Step 4: ticking things off
+  // ---------------------------------------------------------------------------
+
+  // Rows show their check for a moment before the data catches up.
+  const [settling, setSettling] = useState<Set<string>>(new Set());
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+
+  const toggle = useCallback(
+    (item: TickItem) => {
+      // Second tap while settling cancels the tick.
+      const pending = timers.current.get(item.key);
+      if (pending) {
+        clearTimeout(pending);
+        timers.current.delete(item.key);
+        setSettling((s) => new Set([...s].filter((k) => k !== item.key)));
+        return;
+      }
+      const write = async () => {
+        if (item.kind === "todo") {
+          const { error } = await supabase.from("list_entries").update({ status: item.done ? "open" : "done" }).eq("id", item.id);
+          if (error) toast.show(friendlyError(error));
+          await loadDay();
+        } else {
+          const { error } = await supabase.rpc("set_completion", {
+            p_kind: item.kind,
+            p_item_id: item.id,
+            p_for_date: today,
+            p_done: !item.done,
+          });
+          if (error) toast.show(friendlyError(error));
+          await plan.reload();
+        }
+      };
+      // Unticking (or ticking a routine step, which stays in place) is instant;
+      // to-dos, chores and zone tasks leave the list, so they show their tick first.
+      if (item.done || item.kind === "step") return void write();
+      setSettling((s) => new Set(s).add(item.key));
+      timers.current.set(
+        item.key,
+        setTimeout(async () => {
+          timers.current.delete(item.key);
+          await write();
+          setSettling((s) => new Set([...s].filter((k) => k !== item.key)));
+        }, TICK_SETTLE_MS),
+      );
+    },
+    [supabase, today, toast, loadDay, plan],
+  );
+
+  const tickRow = (item: TickItem) => (
+    <TickRow
+      key={item.key}
+      item={item}
+      checked={item.done || settling.has(item.key)}
+      canToggle={canTick(me, item.assignee)}
+      // Avatars only when it helps: someone else's, or everyone's view.
+      assignee={item.assignee && (item.assignee !== me.id || showEveryone) ? memberById(item.assignee) : undefined}
+      onToggle={() => toggle(item)}
+    />
+  );
+
+  // Folded routines: by default the unfinished ones for this time of day are
+  // open; once someone taps a header, their choice is kept.
+  const [openRoutines, setOpenRoutines] = useState<Set<string> | null>(null);
+  const currentTime = timeOfDayAt(hour);
+  const openByDefault = (r: (typeof routines)[number]) =>
+    r.routine.time_of_day === currentTime && !r.items.every((i) => i.done);
+  const isOpen = (r: (typeof routines)[number]) => (openRoutines ? openRoutines.has(r.routine.id) : openByDefault(r));
+  const toggleRoutine = (id: string) =>
+    setOpenRoutines((prev) => {
+      const next = new Set(prev ?? routines.filter(openByDefault).map((r) => r.routine.id));
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  // ---------------------------------------------------------------------------
+  // Step 5: render
+  // ---------------------------------------------------------------------------
+
+  const dayLabel = useMemo(() => {
+    if (!dayInfo) return null;
+    if (dayInfo.mode === "holiday" && dayInfo.label && dayInfo.period_start && dayInfo.period_end) {
+      const length = daysBetweenKeys(dayInfo.period_start, dayInfo.period_end) + 1;
+      return length > 1
+        ? `${dayInfo.label}, day ${daysBetweenKeys(dayInfo.period_start, today) + 1} of ${length}`
+        : dayInfo.label;
+    }
+    return MODE_LABELS[dayInfo.mode];
+  }, [dayInfo, today]);
+
+  const loading = plan.loading || !dayInfo;
+  const nothingToDo = !loading && routines.length === 0 && toDo.length === 0 && (!zone || zone.mine.every((i) => i.done));
+
+  const eventRow = (occ: Occurrence, isNext: boolean, past: boolean) => (
+    <Link key={occ.key} href="/calendar" className={`row row--link today-event ${isNext ? "today-event--next" : ""} ${past ? "today-event--past" : ""}`}>
+      <span className="event-row__time">
+        {occ.allDay ? "All day" : timeKey(occ.start!, tz)}
+        {!occ.allDay && <span className="event-row__time-end">{timeKey(occ.end!, tz)}</span>}
+      </span>
+      <span className={`event-row__bar ${occ.allDay ? "event-row__bar--allday" : ""}`} aria-hidden="true" />
+      <span className="row__body">
+        <span className="row__title">{occ.title || "(No title)"}</span>
+        {isNext && <span className="row__subtitle today-event__label">Up next</span>}
+        {!isNext && occ.row.location && <span className="row__subtitle">{occ.row.location}</span>}
+      </span>
+    </Link>
+  );
 
   return (
     <main className="screen">
       <Navbar
-        title="Lists"
-        subtitle={greeting(me.display_name)}
+        title="Today"
+        subtitle={greeting(hour, me.display_name)}
         trailing={
-          <button
-            type="button"
-            className="nav-button nav-button--icon"
-            aria-label="New list"
-            onClick={() => setSheetOpen(true)}
-          >
-            <PlusIcon size={24} />
-          </button>
+          meIsAdult && (
+            <button
+              type="button"
+              className="nav-button"
+              aria-pressed={showEveryone}
+              onClick={() => setShowEveryone((v) => !v)}
+            >
+              {showEveryone ? "Just mine" : "Everyone’s"}
+            </button>
+          )
         }
       />
 
-      {/* Lists */}
+      {/* 1. The day */}
       <section className="section">
-        <div className="group">
-          {lists === null &&
-            [0, 1].map((i) => <div key={i} className="skeleton" style={{ height: 64 }} />)}
-          {lists?.map((list) => {
-            const Icon = list.type === "shopping" ? CartIcon : ChecklistIcon;
-            const noun = list.type === "shopping" ? "to buy" : "to do";
-            return (
-              <Link
-                key={list.id}
-                href={`/lists/${list.id}`}
-                className="row row--link"
-                style={{ minHeight: 64 }}
-              >
-                <span
-                  className="row__icon"
-                  style={{ background: list.type === "shopping" ? "var(--accent)" : "#ff9500" }}
-                >
-                  <Icon size={19} strokeWidth={2} />
-                </span>
-                <span className="row__body">
-                  <span className="row__title" style={{ fontWeight: 500 }}>
-                    {list.name}
-                  </span>
-                  <span className="row__subtitle">
-                    {list.open === 0 ? "All done" : `${list.open} ${noun}`}
-                  </span>
-                </span>
-                <span className="row__trailing">
-                  {list.suggested > 0 && (
-                    <span
-                      style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13 }}
-                      aria-label={`${list.suggested} suggested`}
-                    >
-                      <GlowSparkle size={14} id={`spark-${list.id}`} />
-                      <span className="glow-text">{list.suggested}</span>
-                    </span>
-                  )}
-                  <ChevronRightIcon className="row__chevron" size={16} />
-                </span>
-              </Link>
-            );
-          })}
+        <div className="day-banner">
+          <span className="day-banner__date">{longDate.format(new Date(`${today}T12:00:00Z`))}</span>
+          {dayLabel && <span className={`day-banner__mode day-banner__mode--${dayInfo?.mode}`}>{dayLabel}</span>}
         </div>
       </section>
 
-      {/* Coming up: a glimpse of what the engine expects */}
-      {upcoming.length > 0 && (
+      {/* 2. Up next */}
+      {calendar.status && (
         <section className="section">
           <div className="section__header">
-            <span className="section__header-title">Coming up</span>
-            <Link href="/rhythms" className="section__header-action">
-              See all
+            <span className="section__header-title">Calendar</span>
+            <Link href="/calendar" className="section__header-action">
+              Open
             </Link>
           </div>
           <div className="group">
-            {upcoming.map((p) => (
-              <div key={p.item_id} className="row" style={{ ["--separator-inset" as string]: "16px" }}>
-                <span className="row__body">
-                  <span className="row__title">{p.item.display_name}</span>
-                </span>
-                <span className="row__trailing" style={{ fontSize: 15 }}>
-                  {describeDue(p.next_expected_at!)}
-                </span>
+            {events.today.length === 0 && !events.tomorrowFirst && (
+              <div className="row" style={{ color: "var(--ink-2)" }}>
+                <span className="row__body">Nothing on the calendar today</span>
               </div>
-            ))}
+            )}
+            {events.today.map((occ) =>
+              eventRow(occ, occ.key === events.nextKey, !occ.allDay && !!occ.end && occ.end <= now),
+            )}
+            {events.tomorrowFirst && (
+              <Link href="/calendar" className="row row--link today-event">
+                <span className="event-row__time">{events.tomorrowFirst.allDay ? "All day" : timeKey(events.tomorrowFirst.start!, tz)}</span>
+                <span className="event-row__bar" aria-hidden="true" />
+                <span className="row__body">
+                  <span className="row__title">{events.tomorrowFirst.title || "(No title)"}</span>
+                  <span className="row__subtitle">Tomorrow{events.allPast ? ", first up" : ""}</span>
+                </span>
+              </Link>
+            )}
           </div>
-          <p className="section__footer">These are added to Groceries automatically when they&rsquo;re due.</p>
         </section>
       )}
 
-      {/* New list sheet */}
-      <Sheet
-        open={sheetOpen}
-        onClose={() => setSheetOpen(false)}
-        title="New list"
-        leading={
-          <button type="button" className="nav-button" onClick={() => setSheetOpen(false)}>
-            Cancel
-          </button>
-        }
-        trailing={
-          <button
-            type="button"
-            className="nav-button nav-button--strong"
-            onClick={createList}
-            disabled={!newName.trim()}
-          >
-            Create
-          </button>
-        }
-      >
-        <div className="sheet__stack">
-          <input
-            className="input"
-            aria-label="List name"
-            placeholder={newType === "shopping" ? "e.g. Hardware store" : "e.g. Weekend jobs"}
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && createList()}
-            maxLength={40}
-            autoFocus
-          />
-          <div>
-            <Segmented
-              label="List type"
-              value={newType}
-              onChange={setNewType}
-              options={[
-                { value: "shopping", label: "Shopping" },
-                { value: "todo", label: "To-do" },
-              ]}
-            />
-            <p className="section__footer">
-              {newType === "shopping"
-                ? "Sorted by aisle. Everything you tick off teaches HomeHub your rhythms."
-                : "A simple checklist. Nothing is learned from it."}
-            </p>
+      {loading && (
+        <section className="section">
+          <div className="group" aria-busy="true" aria-label="Loading today">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="skeleton" />
+            ))}
           </div>
-          {error && (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
-          )}
-        </div>
-      </Sheet>
+        </section>
+      )}
+
+      {/* 3. Routines */}
+      {routines.map((r) => {
+        const { routine, items } = r;
+        const doneCount = items.filter((i) => i.done).length;
+        const complete = doneCount === items.length;
+        const open = isOpen(r);
+        const owner = memberById(routine.owner_member);
+        return (
+          <section key={routine.id} className="section">
+            <div className="section__header">
+              <button
+                type="button"
+                className="section__header-title routine-toggle"
+                aria-expanded={open}
+                onClick={() => toggleRoutine(routine.id)}
+              >
+                {routine.name}
+                <ChevronDownIcon size={14} style={{ transform: open ? "none" : "rotate(-90deg)", transition: "transform .2s" }} />
+              </button>
+              <span className={complete ? "routine-progress routine-progress--done" : "routine-progress"}>
+                {complete ? "All done" : `${doneCount} of ${items.length}`}
+              </span>
+            </div>
+            {open ? (
+              <div className="group">
+                <AnimatePresence initial={false}>{items.map(tickRow)}</AnimatePresence>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="group routine-folded"
+                onClick={() => toggleRoutine(routine.id)}
+              >
+                <span className="progress-track" aria-hidden="true">
+                  <span className="progress-fill" style={{ width: `${(doneCount / items.length) * 100}%` }} />
+                </span>
+                <span className="routine-folded__label">
+                  {TIME_OF_DAY_LABELS[routine.time_of_day]}
+                  {owner && owner.id !== me.id ? `, ${owner.display_name.split(" ")[0]}` : ""}
+                </span>
+              </button>
+            )}
+          </section>
+        );
+      })}
+
+      {/* 4. To do */}
+      {toDo.length > 0 && (
+        <section className="section">
+          <div className="section__header">
+            <span className="section__header-title">To do</span>
+            <span className="row__count">{toDo.length}</span>
+          </div>
+          <div className="group">
+            <AnimatePresence initial={false}>{toDo.map(tickRow)}</AnimatePresence>
+          </div>
+        </section>
+      )}
+
+      {/* 5. This fortnight's zone */}
+      {zone && zone.mine.length > 0 && (
+        <section className="section">
+          <div className="section__header">
+            <span className="section__header-title">Zone: {zone.zone.name}</span>
+            <span>
+              {zone.doneCount} of {zone.total} done
+            </span>
+          </div>
+          <div className="group">
+            <AnimatePresence initial={false}>
+              {/* Next three not done, then anything ticked today stays visible */}
+              {[...zone.mine.filter((i) => !i.done).slice(0, 3), ...zone.mine.filter((i) => i.done && settling.has(i.key))].map(tickRow)}
+            </AnimatePresence>
+            {zone.mine.every((i) => i.done) && (
+              <div className="row" style={{ color: "var(--ink-2)" }}>
+                <span className="row__body">All done for this fortnight</span>
+              </div>
+            )}
+          </div>
+          <p className="section__footer">
+            Until {describeDay(zone.fortnight.end, today)}, day {zone.fortnight.day} of 14.
+          </p>
+        </section>
+      )}
+
+      {/* Nothing to do */}
+      {nothingToDo && (
+        <section className="section">
+          <div className="group empty">
+            <span className="empty__title">Nothing left to do today</span>
+            {meIsAdult ? "Add routines, chores and zones on the Household tab." : "Enjoy your day."}
+          </div>
+        </section>
+      )}
+
+      {/* 6. Groceries */}
+      {groceries && (
+        <section className="section">
+          <div className="group">
+            <Link href={`/lists/${groceries.id}`} className="row row--link">
+              <span className="row__icon" style={{ background: "var(--accent)" }}>
+                <CartIcon size={19} strokeWidth={2} />
+              </span>
+              <span className="row__body">
+                <span className="row__title">{groceries.name}</span>
+                <span className="row__subtitle">{groceries.open === 0 ? "Nothing to buy" : `${groceries.open} to buy`}</span>
+              </span>
+              {groceries.suggested > 0 && (
+                <span className="row__trailing" style={{ gap: 4, fontSize: 13 }} aria-label={`${groceries.suggested} suggested`}>
+                  <GlowSparkle size={14} id="today-spark" />
+                  <span className="glow-text">{groceries.suggested}</span>
+                </span>
+              )}
+              <ChevronRightIcon className="row__chevron" size={16} />
+            </Link>
+          </div>
+        </section>
+      )}
+      {toast.node}
     </main>
   );
 }

@@ -1,16 +1,22 @@
 /**
- * Bottom tab bar: Lists, Calendar, Rhythms, Household. Frosted, fixed, safe-area aware.
+ * Bottom tab bar: Today, Lists, Calendar, Household. Frosted, fixed,
+ * safe-area aware. Rhythms lives inside Lists, so its tab lights up Lists.
  */
 "use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CalendarIcon, HomeIcon, ListsIcon, RhythmIcon } from "./icons";
+import { CalendarIcon, HomeIcon, ListsIcon, SunIcon } from "./icons";
 
 const TABS = [
-  { href: "/", label: "Lists", Icon: ListsIcon, match: (p: string) => p === "/" || p.startsWith("/lists") },
+  { href: "/", label: "Today", Icon: SunIcon, match: (p: string) => p === "/" },
+  {
+    href: "/lists",
+    label: "Lists",
+    Icon: ListsIcon,
+    match: (p: string) => p.startsWith("/lists") || p.startsWith("/rhythms"),
+  },
   { href: "/calendar", label: "Calendar", Icon: CalendarIcon, match: (p: string) => p.startsWith("/calendar") },
-  { href: "/rhythms", label: "Rhythms", Icon: RhythmIcon, match: (p: string) => p.startsWith("/rhythms") },
   { href: "/household", label: "Household", Icon: HomeIcon, match: (p: string) => p.startsWith("/household") },
 ];
 

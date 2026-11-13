@@ -3,7 +3,10 @@
  *
  * Tap the circle to tick it off, tap the text to edit, swipe left to reveal
  * Delete (or "Not now" for a suggestion). Suggested lines show why the app
- * added them.
+ * added them; to-dos show their due date and who they're for.
+ *
+ * Read-only rows (children) can't be edited or swiped, and their tick is
+ * shown only on lines assigned to that child.
  */
 "use client";
 
@@ -28,9 +31,29 @@ interface EntryRowProps {
   onSwipeAction: () => void;
   /** Extra trailing content (e.g. the "Not now" chip on suggestions). */
   trailing?: React.ReactNode;
+  /** To-dos: who it's for (shown instead of "added by"). */
+  assignee?: Member;
+  /** To-dos: "Today", "Tomorrow", "Fri 20 Nov"; overdue shows in red. */
+  due?: { label: string; overdue: boolean };
+  /** No editing or swiping (children). */
+  readOnly?: boolean;
+  /** Show the tick control (false for lines a child may not tick). */
+  canToggle?: boolean;
 }
 
-export function EntryRow({ entry, checked, addedBy, onToggle, onEdit, onSwipeAction, trailing }: EntryRowProps) {
+export function EntryRow({
+  entry,
+  checked,
+  addedBy,
+  onToggle,
+  onEdit,
+  onSwipeAction,
+  trailing,
+  assignee,
+  due,
+  readOnly = false,
+  canToggle = true,
+}: EntryRowProps) {
   const controls = useAnimationControls();
   const dragged = useRef(false);
   // The action behind the row only becomes visible once the row moves, so it
@@ -50,6 +73,7 @@ export function EntryRow({ entry, checked, addedBy, onToggle, onEdit, onSwipeAct
 
   // Step 2: subtitle: suggestion reason, or quantity/note context.
   const subtitle = isSuggestion ? suggestionReason(entry.item?.pattern ?? null) : entry.note || null;
+  const showDue = due && !isDone;
 
   return (
     // Step 3: the wrapper animates in, collapses out, and glides when the
@@ -76,7 +100,7 @@ export function EntryRow({ entry, checked, addedBy, onToggle, onEdit, onSwipeAct
       <motion.div
         className={`row ${isDone ? "row--done" : ""}`}
         style={{ touchAction: "pan-y", x }}
-        drag={isDone ? false : "x"}
+        drag={isDone || readOnly ? false : "x"}
         dragDirectionLock
         dragConstraints={{ left: -ACTION_WIDTH, right: 0 }}
         dragElastic={{ left: 0.15, right: 0 }}
@@ -84,29 +108,44 @@ export function EntryRow({ entry, checked, addedBy, onToggle, onEdit, onSwipeAct
         onDragEnd={handleDragEnd}
         animate={controls}
       >
-        <CheckCircle
-          checked={checked}
-          onToggle={onToggle}
-          label={checked ? `Mark ${entry.text} as not done` : `Tick off ${entry.text}`}
-        />
+        {canToggle ? (
+          <CheckCircle
+            checked={checked}
+            onToggle={onToggle}
+            label={checked ? `Mark ${entry.text} as not done` : `Tick off ${entry.text}`}
+          />
+        ) : (
+          <span className="check-placeholder" aria-hidden="true" />
+        )}
 
         <button
           type="button"
           className="row__body"
           style={{ textAlign: "left", minHeight: 32 }}
+          disabled={readOnly}
           onClick={() => {
-            if (dragged.current) return;
+            if (dragged.current || readOnly) return;
             controls.start({ x: 0 });
             onEdit();
           }}
         >
           <span className="row__title">{entry.text}</span>
-          {subtitle && <span className="row__subtitle">{subtitle}</span>}
+          {(subtitle || showDue) && (
+            <span className="row__subtitle">
+              {showDue && <span className={due.overdue ? "due due--overdue" : "due"}>{due.label}</span>}
+              {showDue && subtitle && " · "}
+              {subtitle}
+            </span>
+          )}
         </button>
 
         <div className="row__trailing">
           {entry.quantity && <span className="quantity-pill">{entry.quantity}</span>}
-          {addedBy && !isDone && <Avatar member={addedBy} size="mini" />}
+          {assignee ? (
+            <Avatar member={assignee} size="mini" />
+          ) : (
+            addedBy && !isDone && <Avatar member={addedBy} size="mini" />
+          )}
           {trailing}
         </div>
       </motion.div>

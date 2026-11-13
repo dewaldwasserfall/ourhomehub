@@ -19,7 +19,7 @@ export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
   // Step 1: who, and is there a calendar?
-  const result = await getCaller();
+  const result = await getCaller({ adultOnly: true });
   if (!result.ok) return result.response;
   const { caller } = result;
   const connection = await loadConnection(caller.householdId);

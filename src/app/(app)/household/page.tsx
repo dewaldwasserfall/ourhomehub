@@ -1,28 +1,56 @@
 /**
- * Household tab: who's in it, the invite code, the family calendar link,
- * and signing out.
+ * Household tab: who's in it, the household's plan (routines, zones, chores,
+ * school holidays), the invite code, the family calendar link, and signing out.
+ *
+ * Children see the members, the calendar status and Sign out; renaming, the
+ * plan and the invite code are for adults (the database enforces the same).
  */
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Avatar } from "@/components/avatar";
 import { FamilyCalendarCard } from "@/components/family-calendar-card";
 import { useHousehold } from "@/components/household-context";
-import { RefreshIcon, ShareIcon } from "@/components/icons";
+import {
+  ChevronRightIcon,
+  ChoreIcon,
+  HolidayIcon,
+  RefreshIcon,
+  RoutineIcon,
+  ShareIcon,
+  ZoneIcon,
+} from "@/components/icons";
 import { Navbar } from "@/components/navbar";
 import { friendlyError } from "@/lib/errors";
+import { roleLabel } from "@/lib/roles";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+
+/** The four planning screens, each a row with a coloured icon. */
+const PLAN_LINKS = [
+  { href: "/household/routines", title: "Routines", subtitle: "Morning, after-school and evening checklists", Icon: RoutineIcon, colour: "#ff9500" },
+  { href: "/household/zones", title: "Zones", subtitle: "One part of the house each fortnight", Icon: ZoneIcon, colour: "#5856d6" },
+  { href: "/household/chores", title: "Chores", subtitle: "Jobs that come round every few days or weeks", Icon: ChoreIcon, colour: "#34aadc" },
+  { href: "/household/holidays", title: "School holidays", subtitle: "Holidays, public holidays and days off", Icon: HolidayIcon, colour: "#ff2d55" },
+];
 
 export default function HouseholdPage() {
   const router = useRouter();
-  const { household, members, me, setHousehold } = useHousehold();
+  const { household, members, me, meIsAdult, setHousehold } = useHousehold();
   const [name, setName] = useState(household.name);
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [shareLabel, setShareLabel] = useState("Share");
   const [error, setError] = useState<string | null>(null);
   const supabase = getSupabaseBrowserClient();
 
-  // Step 1: rename the household when the field loses focus.
+  // Step 1: adults fetch the invite code (it isn't a readable column).
+  useEffect(() => {
+    if (!meIsAdult) return;
+    supabase.rpc("household_invite_code").then(({ data }) => setInviteCode((data as string) ?? null));
+  }, [supabase, meIsAdult]);
+
+  // Step 2: rename the household when the field loses focus.
   async function saveName() {
     const trimmed = name.trim();
     if (!trimmed || trimmed === household.name) {
@@ -38,15 +66,16 @@ export default function HouseholdPage() {
     setHousehold({ ...household, name: trimmed });
   }
 
-  // Step 2: share the invite code (native share sheet, else copy).
+  // Step 3: share the invite code (native share sheet, else copy).
   async function shareCode() {
-    const text = `Join our household in HomeHub with code ${household.invite_code}: ${window.location.origin}`;
+    if (!inviteCode) return;
+    const text = `Join our household in HomeHub with code ${inviteCode}: ${window.location.origin}`;
     try {
       if (navigator.share) {
         await navigator.share({ title: "HomeHub invite", text });
         return;
       }
-      await navigator.clipboard.writeText(household.invite_code);
+      await navigator.clipboard.writeText(inviteCode);
       setShareLabel("Copied");
       setTimeout(() => setShareLabel("Share"), 1800);
     } catch {
@@ -54,14 +83,14 @@ export default function HouseholdPage() {
     }
   }
 
-  // Step 3: issue a new code (the old one stops working immediately).
+  // Step 4: issue a new code (the old one stops working immediately).
   async function newCode() {
     const { data, error: rpcError } = await supabase.rpc("regenerate_invite_code");
     if (rpcError) {
       setError(friendlyError(rpcError));
       return;
     }
-    setHousehold({ ...household, invite_code: data as string });
+    setInviteCode(data as string);
   }
 
   async function signOut() {
@@ -85,6 +114,7 @@ export default function HouseholdPage() {
             onBlur={saveName}
             onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
             maxLength={60}
+            readOnly={!meIsAdult}
           />
         </label>
       </section>
@@ -103,44 +133,73 @@ export default function HouseholdPage() {
                 <span className="row__title">
                   {member.display_name}
                   {member.id === me.id && <span style={{ color: "var(--ink-2)" }}> (you)</span>}
-                  {member.role === "owner" && <span style={{ color: "var(--ink-2)" }}>, owner</span>}
                 </span>
                 {member.email && <span className="row__subtitle">{member.email}</span>}
               </div>
+              <span className="row__trailing">{roleLabel(member.role)}</span>
             </div>
           ))}
         </div>
       </section>
 
-      {/* Invite */}
-      <section className="section">
-        <div className="section__header">
-          <span className="section__header-title">Invite someone</span>
-        </div>
-        <div className="invite">
-          <p className="invite__caption">They sign in with Google, choose Join with a code, and enter:</p>
-          <div className="invite__code" aria-label={`Invite code ${household.invite_code.split("").join(" ")}`}>
-            {household.invite_code.split("").map((char, i) => (
-              <span key={i} className="invite__char" aria-hidden="true">
-                {char}
-              </span>
+      {/* The household's plan (adults) */}
+      {meIsAdult && (
+        <section className="section">
+          <div className="section__header">
+            <span className="section__header-title">Plan</span>
+          </div>
+          <div className="group">
+            {PLAN_LINKS.map(({ href, title, subtitle, Icon, colour }) => (
+              <Link key={href} href={href} className="row row--link">
+                <span className="row__icon" style={{ background: colour }}>
+                  <Icon size={19} strokeWidth={2} />
+                </span>
+                <span className="row__body">
+                  <span className="row__title">{title}</span>
+                  <span className="row__subtitle">{subtitle}</span>
+                </span>
+                <ChevronRightIcon className="row__chevron" size={16} />
+              </Link>
             ))}
           </div>
-          <div className="invite__actions">
-            <button type="button" className="button button--secondary" onClick={shareCode}>
-              <ShareIcon size={20} />
-              {shareLabel}
-            </button>
-            <button type="button" className="button button--secondary" onClick={newCode}>
-              <RefreshIcon size={20} />
-              New code
-            </button>
+        </section>
+      )}
+
+      {/* Invite (adults) */}
+      {meIsAdult && (
+        <section className="section">
+          <div className="section__header">
+            <span className="section__header-title">Invite someone</span>
           </div>
-        </div>
-        <p className="section__footer">
-          Their Google account also has to be on the allowlist in Supabase. A new code stops the old one working.
-        </p>
-      </section>
+          <div className="invite">
+            <p className="invite__caption">They sign in with Google, choose Join with a code, and enter:</p>
+            <div
+              className="invite__code"
+              aria-label={inviteCode ? `Invite code ${inviteCode.split("").join(" ")}` : "Loading invite code"}
+            >
+              {(inviteCode ?? "      ").split("").map((char, i) => (
+                <span key={i} className="invite__char" aria-hidden="true">
+                  {char}
+                </span>
+              ))}
+            </div>
+            <div className="invite__actions">
+              <button type="button" className="button button--secondary" onClick={shareCode} disabled={!inviteCode}>
+                <ShareIcon size={20} />
+                {shareLabel}
+              </button>
+              <button type="button" className="button button--secondary" onClick={newCode}>
+                <RefreshIcon size={20} />
+                New code
+              </button>
+            </div>
+          </div>
+          <p className="section__footer">
+            Their Google account also has to be on the allowlist in Supabase, which also says whether they join as an adult
+            or a child. A new code stops the old one working.
+          </p>
+        </section>
+      )}
 
       {/* Family calendar */}
       <FamilyCalendarCard

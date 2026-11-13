@@ -21,6 +21,7 @@
     13. Login and onboarding
     14. Utilities and reduced motion
     15. Calendar
+    16. Today, routines, zones, chores and holidays (Phase 3)
    ============================================================================= */
 
 
@@ -1446,4 +1447,262 @@ textarea.input {
 
 .status-dot--error {
   background: var(--danger);
+}
+
+
+/* -----------------------------------------------------------------------------
+   16. Today, routines, zones, chores and holidays (Phase 3)
+   -------------------------------------------------------------------------- */
+
+/* The day: date plus today's mode. The mode pill is the one bit of colour,
+   so a holiday is noticeable at a glance. */
+.day-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius-group);
+  background: var(--surface);
+}
+
+.day-banner__date {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.day-banner__mode {
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.day-banner__mode--school {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.day-banner__mode--holiday {
+  background: rgba(255, 149, 0, 0.16);
+  color: #c46a00;
+}
+
+@media (prefers-color-scheme: dark) {
+  .day-banner__mode--holiday {
+    color: #ffb340;
+  }
+}
+
+/* Calendar rows on Today: past events fade, the next one is marked. */
+.today-event--past .row__title,
+.today-event--past .event-row__time {
+  color: var(--ink-3);
+}
+
+.today-event--next .event-row__bar {
+  background: var(--accent);
+}
+
+.today-event__label {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Routine headers fold and unfold their checklist. */
+.routine-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-2);
+}
+
+.routine-progress {
+  font-variant-numeric: tabular-nums;
+}
+
+.routine-progress--done {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.routine-folded {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 16px;
+  text-align: left;
+}
+
+.routine-folded:active {
+  background: var(--fill);
+}
+
+.routine-folded__label {
+  flex: none;
+  color: var(--ink-2);
+  font-size: 15px;
+}
+
+.progress-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--fill);
+  overflow: hidden;
+}
+
+.progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.4s var(--ease-out);
+}
+
+/* Due dates on to-dos and chores; overdue in red. */
+.due {
+  font-variant-numeric: tabular-nums;
+}
+
+.due--overdue {
+  color: var(--danger);
+  font-weight: 500;
+}
+
+/* Keeps the text column aligned when a row has no tick (children). */
+.check-placeholder {
+  flex: none;
+  width: 26px;
+  height: 26px;
+}
+
+/* Person chips carry a mini avatar. */
+.chip--person {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 6px;
+}
+
+.field__hint {
+  margin-left: 6px;
+  color: var(--ink-3);
+  font-weight: 400;
+}
+
+/* Weekday picker: seven round toggles, M T W T F S S. */
+.weekday-chips {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+
+.weekday-chip {
+  aspect-ratio: 1;
+  max-width: 44px;
+  justify-self: center;
+  width: 100%;
+  border-radius: 50%;
+  background: var(--fill);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.weekday-chip[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* Reorderable plan lists (routine steps, zones, zone tasks). */
+.reorder-item {
+  position: relative;
+  background: var(--surface);
+  list-style: none;
+}
+
+.reorder-item + .reorder-item .row::before,
+.reorder-group:not(:empty) + .add-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 16px;
+  height: 0.5px;
+  background: var(--separator);
+}
+
+.drag-handle {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-right: -6px;
+  color: var(--ink-3);
+  touch-action: none;
+  cursor: grab;
+}
+
+.add-row {
+  --separator-inset: 16px;
+}
+
+.add-row__input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 17px;
+}
+
+.add-row__input::placeholder {
+  color: var(--ink-3);
+}
+
+.add-row__input:focus {
+  outline: none;
+}
+
+/* What kind of day a holiday row is. */
+.kind-badge {
+  flex: none;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.kind-badge--holiday {
+  background: rgba(255, 149, 0, 0.16);
+  color: #c46a00;
+}
+
+.kind-badge--public_holiday {
+  background: rgba(255, 45, 85, 0.12);
+  color: #d70f45;
+}
+
+.kind-badge--school_day {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+@media (prefers-color-scheme: dark) {
+  .kind-badge--holiday {
+    color: #ffb340;
+  }
+  .kind-badge--public_holiday {
+    color: #ff6482;
+  }
 }

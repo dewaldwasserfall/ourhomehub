@@ -8,8 +8,9 @@
  */
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { GlowSparkle } from "@/components/icons";
+import { ChevronLeftIcon, GlowSparkle } from "@/components/icons";
 import { Navbar } from "@/components/navbar";
 import {
   describeAgo,
@@ -62,7 +63,15 @@ export default function RhythmsPage() {
 
   return (
     <main className="screen">
-      <Navbar title="Rhythms" />
+      <Navbar
+        title="Rhythms"
+        leading={
+          <Link href="/lists" className="nav-button" aria-label="Back to Lists">
+            <ChevronLeftIcon size={22} />
+            Lists
+          </Link>
+        }
+      />
 
       {/* How it works */}
       <section className="section">

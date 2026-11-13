@@ -61,9 +61,15 @@ const SUPABASE_STUB = `
   create publication supabase_realtime;
 `;
 
-/** Supabase's default table grants; RLS is what actually restricts access. */
+/**
+ * Supabase's default table grants; RLS is what actually restricts access.
+ * Set as default privileges BEFORE the migrations run (as on Supabase), so a
+ * migration that narrows a grant (e.g. hiding households.invite_code from
+ * the browser) is tested exactly as it behaves in production.
+ */
 const SUPABASE_GRANTS = `
-  grant select, insert, update, delete on all tables in schema public to authenticated;
+  alter default privileges in schema public
+    grant select, insert, update, delete on tables to anon, authenticated, service_role;
 `;
 
 const USERS = {
@@ -72,6 +78,7 @@ const USERS = {
   stranger: { id: "33333333-3333-4333-8333-333333333333", email: "stranger@example.com" },
   outsider: { id: "44444444-4444-4444-8444-444444444444", email: "outsider@example.com" },
   aupair: { id: "55555555-5555-4555-8555-555555555555", email: "aupair@example.com" },
+  kid: { id: "66666666-6666-4666-8666-666666666666", email: "kid@example.com" },
 } as const;
 
 type UserKey = keyof typeof USERS;
@@ -132,11 +139,12 @@ beforeAll(async () => {
     "20261112000400_allowlist_expiry.sql",
     "20261112000500_pin_function_search_paths.sql",
     "20261112000600_calendar.sql",
+    "20261113000700_today_routines_roles.sql",
   ];
+  await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
     await db.exec(readFileSync(path.join(MIGRATIONS_DIR, file), "utf8"));
   }
-  await db.exec(SUPABASE_GRANTS);
 
   for (const u of Object.values(USERS)) {
     await db.query(`insert into auth.users (id, email) values ($1, $2)`, [u.id, u.email]);
@@ -147,6 +155,7 @@ beforeAll(async () => {
       ('dewald@example.com'), ('partner@example.com'), ('stranger@example.com');
     insert into public.app_allowlist (email, expires_at) values
       ('aupair@example.com', now() + interval '30 days');
+    insert into public.app_allowlist (email, role) values ('kid@example.com', 'child');
   `);
 });
 
@@ -613,5 +622,262 @@ describe("calendar: roles, connection and events", () => {
     expect(await all(`select * from public.calendar_connections`)).toHaveLength(0);
     expect(await all(`select * from public.calendar_events where household_id = $1`, [householdId])).toHaveLength(0);
     expect(await all(`select * from vault.secrets`)).toHaveLength(0);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// Step 8: Phase 3, roles, kids, day modes, routines, zones, chores
+// -----------------------------------------------------------------------------
+
+describe("phase 3: roles and the child account", () => {
+  let todoListId: string;
+  let kidMemberId: string;
+
+  it("turns existing members into adults and lets a listed child join as a child", async () => {
+    await actAsAdmin();
+    const roles = await all<{ display_name: string; role: string }>(
+      `select display_name, role from public.members where household_id = $1 order by created_at`,
+      [householdId],
+    );
+    expect(roles.map((r) => r.role)).toEqual(["owner", "adult", "adult"]);
+
+    const { invite_code } = await one<{ invite_code: string }>(
+      `select invite_code from public.households where id = $1`,
+      [householdId],
+    );
+    await actAs("kid");
+    await one(`select public.join_household($1, 'Shannon')`, [invite_code]);
+    const me = await one<{ role: string; id: string }>(
+      `select id, role from public.members where user_id = $1`,
+      [USERS.kid.id],
+    );
+    expect(me.role).toBe("child");
+    kidMemberId = me.id;
+    expect((await one<{ ok: boolean }>(`select public.is_household_adult() as ok`)).ok).toBe(false);
+  });
+
+  it("hides the invite code from children but not from adults", async () => {
+    await actAs("kid");
+    await expect(db.query(`select invite_code from public.households`)).rejects.toThrow(/permission denied/);
+    await expect(db.query(`select public.household_invite_code()`)).rejects.toThrow(/adults_only/);
+    await expect(db.query(`select public.regenerate_invite_code()`)).rejects.toThrow(/adults_only/);
+    // The rest of the household row is readable.
+    const h = await one<{ name: string; school_region: string }>(`select name, school_region from public.households`);
+    expect(h).toEqual({ name: "Home", school_region: "zuid" });
+
+    await actAs("partner");
+    const code = await one<{ c: string }>(`select public.household_invite_code() as c`);
+    expect(code.c).toMatch(/^[A-Z2-9]{6}$/);
+  });
+
+  it("lets adults add dated, assigned to-dos; children can't add or rename anything", async () => {
+    await actAs("dewald");
+    todoListId = (await one<{ id: string }>(`select id from public.lists where type = 'todo'`)).id;
+    await one(`select public.add_entry($1, 'Tidy your room', null, null, current_date, $2)`, [todoListId, kidMemberId]);
+    await one(`select public.add_entry($1, 'Book the dentist')`, [todoListId]);
+
+    await actAs("kid");
+    await expect(db.query(`select public.add_entry($1, 'Sweets')`, [groceriesListId])).rejects.toThrow(/adults_only/);
+    await expect(
+      db.query(`insert into public.list_entries (list_id, text) values ($1, 'Sneaky')`, [todoListId]),
+    ).rejects.toThrow();
+    await db.query(`update public.households set name = 'Kid castle'`);
+    await db.query(`update public.lists set name = 'Mine'`);
+    await actAsAdmin();
+    expect((await one<{ name: string }>(`select name from public.households where id = $1`, [householdId])).name).toBe("Home");
+    expect(await all(`select 1 from public.lists where name = 'Mine'`)).toHaveLength(0);
+  });
+
+  it("lets a child tick only their own to-do, and only tick it", async () => {
+    await actAs("kid");
+    // Someone else's (unassigned) line: RLS hides it from the update.
+    await db.query(`update public.list_entries set status = 'done' where text = 'Book the dentist'`);
+    // Their own line: ticking works...
+    await db.query(`update public.list_entries set status = 'done' where text = 'Tidy your room'`);
+    // ...but changing anything else does not.
+    await expect(
+      db.query(`update public.list_entries set text = 'Never' where text = 'Tidy your room'`),
+    ).rejects.toThrow(/children_can_only_tick/);
+    await expect(
+      db.query(`update public.list_entries set assigned_to = null where text = 'Tidy your room'`),
+    ).rejects.toThrow();
+
+    await actAsAdmin();
+    const rows = await all<{ text: string; status: string }>(
+      `select text, status from public.list_entries where list_id = $1 order by text`,
+      [todoListId],
+    );
+    expect(rows).toEqual([
+      { text: "Book the dentist", status: "open" },
+      { text: "Tidy your room", status: "done" },
+    ]);
+  });
+
+  it("refuses an assignee from another household", async () => {
+    await actAsAdmin();
+    const strangerMember = (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS.stranger.id])).id;
+    await actAs("dewald");
+    await expect(
+      db.query(`select public.add_entry($1, 'Odd', null, null, null, $2)`, [todoListId, strangerMember]),
+    ).rejects.toThrow(/member_not_in_household/);
+  });
+});
+
+describe("phase 3: school days, holidays and weekends", () => {
+  it("works out each day's mode, with your own school day winning", async () => {
+    await actAs("dewald");
+    await db.query(
+      `insert into public.day_overrides (household_id, start_date, end_date, kind, name, source, external_key) values
+         ($1, '2026-10-17', '2026-10-25', 'holiday', 'Autumn holiday', 'rijksoverheid', 'zuid-2026-herfst'),
+         ($1, '2026-12-25', '2026-12-25', 'public_holiday', 'Christmas Day', 'computed', 'ph-2026-12-25'),
+         ($1, '2026-11-20', '2026-11-20', 'day_off', 'Study day', 'manual', null),
+         ($1, '2026-10-23', '2026-10-23', 'school_day', 'Catch-up day', 'manual', null)`,
+      [householdId],
+    );
+    const mode = async (d: string) =>
+      (await one<{ m: string }>(`select public.day_mode($1, $2::date) as m`, [householdId, d])).m;
+
+    await actAsAdmin(); // day_mode is server-only; the browser uses day_info
+    expect(await mode("2026-11-17")).toBe("school"); // a Tuesday
+    expect(await mode("2026-11-21")).toBe("weekend");
+    expect(await mode("2026-10-18")).toBe("holiday"); // Sunday inside the holiday
+    expect(await mode("2026-10-21")).toBe("holiday");
+    expect(await mode("2026-10-23")).toBe("school"); // override
+    expect(await mode("2026-11-20")).toBe("holiday"); // study day
+    expect(await mode("2026-12-25")).toBe("holiday");
+  });
+
+  it("gives Today the holiday name and its dates", async () => {
+    await actAs("kid");
+    const info = await one<{ mode: string; label: string; period_start: string }>(
+      `select mode, label, period_start::text from public.day_info('2026-10-21')`,
+    );
+    expect(info).toEqual({ mode: "holiday", label: "Autumn holiday", period_start: "2026-10-17" });
+    const plain = await one<{ mode: string; label: string | null }>(`select mode, label from public.day_info('2026-11-17')`);
+    expect(plain).toEqual({ mode: "school", label: null });
+  });
+
+  it("only adults change holidays; other households see none", async () => {
+    await actAs("kid");
+    await expect(
+      db.query(
+        `insert into public.day_overrides (household_id, start_date, end_date, kind, name) values ($1, '2026-11-18', '2026-11-18', 'day_off', 'Skip')`,
+        [householdId],
+      ),
+    ).rejects.toThrow();
+    await actAs("stranger");
+    expect(await all(`select id from public.day_overrides`)).toHaveLength(0);
+  });
+});
+
+describe("phase 3: routines, zones and chores", () => {
+  let kidMemberId: string;
+  let householdStepId: string;
+  let kidStepId: string;
+  let zoneTaskId: string;
+  let choreId: string;
+
+  it("lets adults build routines; children can't", async () => {
+    await actAsAdmin();
+    kidMemberId = (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS.kid.id])).id;
+
+    await actAs("partner");
+    const morning = await one<{ id: string }>(
+      `insert into public.routines (household_id, name) values ($1, 'Morning') returning id`,
+      [householdId],
+    );
+    householdStepId = (
+      await one<{ id: string }>(
+        `insert into public.routine_steps (routine_id, title, weekdays, modes) values ($1, 'Pack sports kit', '{1}', '{school}') returning id`,
+        [morning.id],
+      )
+    ).id;
+    const kids = await one<{ id: string }>(
+      `insert into public.routines (household_id, name, owner_member) values ($1, 'Shannon morning', $2) returning id`,
+      [householdId, kidMemberId],
+    );
+    kidStepId = (
+      await one<{ id: string }>(`insert into public.routine_steps (routine_id, title) values ($1, 'Brush teeth') returning id`, [kids.id])
+    ).id;
+
+    await actAs("kid");
+    await expect(
+      db.query(`insert into public.routines (household_id, name) values ($1, 'Mine')`, [householdId]),
+    ).rejects.toThrow();
+    const steps = await all(`select id from public.routine_steps`);
+    expect(steps).toHaveLength(2);
+  });
+
+  it("lets a child tick steps of their own routine, not household ones", async () => {
+    await actAs("kid");
+    await db.query(`select public.set_completion('step', $1, '2026-11-16', true)`, [kidStepId]);
+    await expect(
+      db.query(`select public.set_completion('step', $1, '2026-11-16', true)`, [householdStepId]),
+    ).rejects.toThrow(/not_assigned_to_you/);
+    // The browser can't write completions directly.
+    await expect(
+      db.query(
+        `insert into public.completions (household_id, kind, item_id, for_date) values ($1, 'step', $2, '2026-11-17')`,
+        [householdId, householdStepId],
+      ),
+    ).rejects.toThrow();
+
+    await actAs("dewald");
+    await db.query(`select public.set_completion('step', $1, '2026-11-16', true)`, [householdStepId]);
+    // Ticking twice is harmless; unticking removes it.
+    await db.query(`select public.set_completion('step', $1, '2026-11-16', true)`, [householdStepId]);
+    expect(await all(`select id from public.completions where kind = 'step'`)).toHaveLength(2);
+    await db.query(`select public.set_completion('step', $1, '2026-11-16', false)`, [householdStepId]);
+    expect(await all(`select id from public.completions where kind = 'step'`)).toHaveLength(1);
+  });
+
+  it("counts a zone task once per fortnight from the rotation start", async () => {
+    await actAs("dewald");
+    await expect(db.query(`update public.households set zone_rotation_start = '2026-11-11'`)).rejects.toThrow(); // not a Monday
+    await db.query(`update public.households set zone_rotation_start = '2026-11-02'`);
+    const zone = await one<{ id: string }>(`insert into public.zones (household_id, name) values ($1, 'Kitchen') returning id`, [householdId]);
+    zoneTaskId = (
+      await one<{ id: string }>(`insert into public.zone_tasks (zone_id, title) values ($1, 'Clean the oven') returning id`, [zone.id])
+    ).id;
+
+    await db.query(`select public.set_completion('zone_task', $1, '2026-11-12', true)`, [zoneTaskId]);
+    const row = await one<{ d: string }>(`select for_date::text as d from public.completions where kind = 'zone_task'`);
+    expect(row.d).toBe("2026-11-02");
+    // Unticking from another day in the same fortnight finds the same tick.
+    await db.query(`select public.set_completion('zone_task', $1, '2026-11-15', false)`, [zoneTaskId]);
+    expect(await all(`select id from public.completions where kind = 'zone_task'`)).toHaveLength(0);
+  });
+
+  it("moves a chore to its next due date when ticked, and back when unticked", async () => {
+    await actAs("dewald");
+    choreId = (
+      await one<{ id: string }>(
+        `insert into public.chores (household_id, title, every_n, unit, next_due, assigned_to)
+         values ($1, 'Change bed linen', 2, 'week', '2026-11-13', $2) returning id`,
+        [householdId, kidMemberId],
+      )
+    ).id;
+
+    await actAs("kid");
+    await db.query(`select public.set_completion('chore', $1, '2026-11-14', true)`, [choreId]);
+    const due = async () => (await one<{ d: string }>(`select next_due::text as d from public.chores where id = $1`, [choreId])).d;
+    expect(await due()).toBe("2026-11-28");
+    await db.query(`select public.set_completion('chore', $1, '2026-11-14', false)`, [choreId]);
+    expect(await due()).toBe("2026-11-13");
+
+    await actAs("dewald");
+    await db.query(`update public.chores set unit = 'month', every_n = 1 where id = $1`, [choreId]);
+    await db.query(`select public.set_completion('chore', $1, '2026-01-31', true)`, [choreId]);
+    expect(await due()).toBe("2026-02-28");
+  });
+
+  it("deleting a chore deletes its ticks; strangers can't tick anything here", async () => {
+    await actAs("stranger");
+    await expect(db.query(`select public.set_completion('chore', $1, '2026-11-14', true)`, [choreId])).rejects.toThrow(
+      /item_not_found/,
+    );
+    await actAs("dewald");
+    await db.query(`delete from public.chores where id = $1`, [choreId]);
+    expect(await all(`select id from public.completions where kind = 'chore'`)).toHaveLength(0);
   });
 });

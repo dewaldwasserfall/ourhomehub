@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 import { HouseholdProvider } from "@/components/household-context";
 import { TabBar } from "@/components/tab-bar";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import type { Household, Member } from "@/lib/types";
+import { HOUSEHOLD_COLUMNS, type Household, type Member } from "@/lib/types";
 
 // Every screen depends on who is signed in: never cache.
 export const dynamic = "force-dynamic";
@@ -28,7 +28,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   // Step 3: the household and everyone in it.
   const [{ data: household }, { data: members }] = await Promise.all([
-    supabase.from("households").select("*").eq("id", me.household_id).single<Household>(),
+    // Explicit columns: the invite code is not readable from the browser.
+    supabase.from("households").select(HOUSEHOLD_COLUMNS).eq("id", me.household_id).single<Household>(),
     supabase.from("members").select("*").order("created_at"),
   ]);
   if (!household) redirect("/onboarding");

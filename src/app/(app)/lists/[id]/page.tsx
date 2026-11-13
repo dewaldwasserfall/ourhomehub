@@ -22,6 +22,9 @@ import { Navbar } from "@/components/navbar";
 import { useToast } from "@/components/toast";
 import { categoryRank, guessCategory } from "@/lib/categories";
 import { friendlyError } from "@/lib/errors";
+import { dateKey } from "@/lib/calendar/time";
+import { describeDay } from "@/lib/plan";
+import { canTick } from "@/lib/roles";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { ItemWithPattern, ListEntryWithItem } from "@/lib/types";
 import { useListData } from "@/lib/use-list-data";
@@ -32,7 +35,7 @@ const TICK_SETTLE_MS = 650;
 export default function ListPage() {
   const { id } = useParams<{ id: string }>();
   const supabase = getSupabaseBrowserClient();
-  const { me, memberByUserId } = useHousehold();
+  const { me, members, household, meIsAdult, memberByUserId, memberById } = useHousehold();
   const { list, entries, catalogue, loading, notFound, reload, reloadCatalogue, setStatus, removeEntry, clearCompleted } =
     useListData(id);
   const toast = useToast();
@@ -53,7 +56,11 @@ export default function ListPage() {
     const suggestedLines = open.filter((e) => e.source === "suggested");
     const manualLines = open.filter((e) => e.source !== "suggested");
 
-    // Shopping: group by aisle in store order. To-do: one group.
+    // Shopping: group by aisle in store order. To-do: one group, dated lines
+    // first (soonest first), then undated ones in the order they were added.
+    if (!isShopping) {
+      manualLines.sort((a, b) => (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"));
+    }
     const byCategory = new Map<string, ListEntryWithItem[]>();
     for (const line of manualLines) {
       const key = isShopping ? (line.item?.category ?? "Other") : "To do";
@@ -172,7 +179,13 @@ export default function ListPage() {
         // Step 2b: plain field update.
         const { error } = await supabase
           .from("list_entries")
-          .update({ text: edits.text, quantity: edits.quantity, note: edits.note })
+          .update({
+            text: edits.text,
+            quantity: edits.quantity,
+            note: edits.note,
+            // Due date and person only apply to to-dos.
+            ...(isShopping ? {} : { due_date: edits.dueDate, assigned_to: edits.assignedTo }),
+          })
           .eq("id", entry.id);
         if (error) return void toast.show(friendlyError(error));
       }
@@ -190,6 +203,21 @@ export default function ListPage() {
   const swipeAction = (entry: ListEntryWithItem) =>
     entry.source === "suggested" && entry.status === "open" ? dismiss(entry) : remove(entry);
 
+  /** To-dos: "Today", "Tomorrow", "2 days ago" (overdue in red). */
+  const today = dateKey(new Date(), household.timezone);
+  const dueOf = (entry: ListEntryWithItem) =>
+    !isShopping && entry.due_date
+      ? { label: describeDay(entry.due_date, today), overdue: entry.due_date < today }
+      : undefined;
+
+  /** Shared per-row props: due date, assignee, and what a child may do. */
+  const rowProps = (entry: ListEntryWithItem) => ({
+    due: dueOf(entry),
+    assignee: memberById(entry.assigned_to),
+    readOnly: !meIsAdult,
+    canToggle: canTick(me, isShopping ? null : entry.assigned_to),
+  });
+
   /** Show who added a line, but only when it was someone else. */
   const addedByOther = (entry: ListEntryWithItem) =>
     entry.added_by && entry.added_by !== me.user_id ? memberByUserId(entry.added_by) : undefined;
@@ -198,7 +226,7 @@ export default function ListPage() {
   // Step 3: render.
   // ---------------------------------------------------------------------------
   const back = (
-    <Link href="/" className="nav-button" aria-label="Back to Lists">
+    <Link href="/lists" className="nav-button" aria-label="Back to Lists">
       <ChevronLeftIcon size={22} />
       Lists
     </Link>
@@ -223,7 +251,7 @@ export default function ListPage() {
       : `${openCount} ${isShopping ? "to buy" : "to do"}${suggested.length ? `, ${suggested.length} suggested` : ""}`;
 
   return (
-    <main className="screen screen--with-composer">
+    <main className={meIsAdult ? "screen screen--with-composer" : "screen"}>
       <Navbar title={list?.name ?? " "} leading={back} subtitle={summary} />
 
       {/* Loading skeleton */}
@@ -254,14 +282,17 @@ export default function ListPage() {
                     <EntryRow
                       key={entry.id}
                       entry={entry}
+                      {...rowProps(entry)}
                       checked={settling.has(entry.id)}
                       onToggle={() => toggle(entry)}
                       onEdit={() => setEditing(entry)}
                       onSwipeAction={() => swipeAction(entry)}
                       trailing={
-                        <button type="button" className="chip-button" onClick={() => dismiss(entry)}>
-                          Not now
-                        </button>
+                        meIsAdult && (
+                          <button type="button" className="chip-button" onClick={() => dismiss(entry)}>
+                            Not now
+                          </button>
+                        )
                       }
                     />
                   ))}
@@ -286,6 +317,7 @@ export default function ListPage() {
                     <EntryRow
                       key={entry.id}
                       entry={entry}
+                      {...rowProps(entry)}
                       checked={settling.has(entry.id)}
                       addedBy={addedByOther(entry)}
                       onToggle={() => toggle(entry)}
@@ -303,9 +335,11 @@ export default function ListPage() {
             <section className="section">
               <div className="group empty">
                 <span className="empty__title">{completed.length ? "Everything's ticked off" : "Nothing here yet"}</span>
-                {isShopping
-                  ? "Add what you need below. Try “2 milk” or “500g mince”."
-                  : "Add the first thing below."}
+                {!meIsAdult
+                  ? "Nothing for you to do here."
+                  : isShopping
+                    ? "Add what you need below. Try “2 milk” or “500g mince”."
+                    : "Add the first thing below."}
               </div>
             </section>
           )}
@@ -327,6 +361,7 @@ export default function ListPage() {
                     style={{ transform: showCompleted ? "none" : "rotate(-90deg)", transition: "transform .2s" }}
                   />
                 </button>
+                {meIsAdult && (
                 <button
                   type="button"
                   className="section__header-action"
@@ -337,6 +372,7 @@ export default function ListPage() {
                 >
                   Clear
                 </button>
+                )}
               </div>
               {showCompleted && (
                 <div className="group">
@@ -345,6 +381,7 @@ export default function ListPage() {
                       <EntryRow
                         key={entry.id}
                         entry={entry}
+                        {...rowProps(entry)}
                         checked
                         onToggle={() => toggle(entry)}
                         onEdit={() => setEditing(entry)}
@@ -357,12 +394,15 @@ export default function ListPage() {
             </section>
           )}
 
-          <Composer
-            placeholder={`Add to ${list.name}`}
-            catalogue={isShopping ? catalogue : undefined}
-            openItemIds={openItemIds}
-            onAdd={add}
-          />
+          {/* Children read lists; only adults add to them. */}
+          {meIsAdult && (
+            <Composer
+              placeholder={`Add to ${list.name}`}
+              catalogue={isShopping ? catalogue : undefined}
+              openItemIds={openItemIds}
+              onAdd={add}
+            />
+          )}
         </>
       )}
 
@@ -372,6 +412,7 @@ export default function ListPage() {
         onClose={() => setEditing(null)}
         onSave={saveEdits}
         onDelete={(entry) => swipeAction(entry)}
+        members={members}
       />
       {toast.node}
     </main>

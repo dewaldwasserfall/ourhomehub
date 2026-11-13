@@ -35,7 +35,7 @@ async function loadEditable(caller: Caller, id: string) {
 }
 
 export async function PATCH(request: NextRequest, { params }: Params) {
-  const result = await getCaller();
+  const result = await getCaller({ adultOnly: true });
   if (!result.ok) return result.response;
   const { caller } = result;
   const { id } = await params;
@@ -76,7 +76,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 }
 
 export async function DELETE(_request: NextRequest, { params }: Params) {
-  const result = await getCaller();
+  const result = await getCaller({ adultOnly: true });
   if (!result.ok) return result.response;
   const { caller } = result;
   const { id } = await params;

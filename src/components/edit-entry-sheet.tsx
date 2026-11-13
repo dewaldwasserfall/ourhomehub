@@ -1,13 +1,15 @@
 /**
- * Sheet for editing one line: name, quantity, note and (for shopping) the
- * aisle category. Also the keyboard-friendly way to delete or dismiss.
+ * Sheet for editing one line: name, quantity, note, (for shopping) the aisle
+ * category, and (for to-dos) a due date and who it's for. Also the
+ * keyboard-friendly way to delete or dismiss.
  */
 "use client";
 
 import { useEffect, useState } from "react";
 import { CATEGORIES } from "@/lib/categories";
 import { describeAgo, describeInterval } from "@/lib/rhythm";
-import type { ListEntryWithItem, ListType } from "@/lib/types";
+import type { ListEntryWithItem, ListType, Member } from "@/lib/types";
+import { DateField, MemberChips } from "./plan-controls";
 import { Sheet } from "./sheet";
 
 export interface EntryEdits {
@@ -15,6 +17,9 @@ export interface EntryEdits {
   quantity: string | null;
   note: string | null;
   category: string | null;
+  /** To-dos only. */
+  dueDate: string | null;
+  assignedTo: string | null;
 }
 
 interface EditEntrySheetProps {
@@ -23,13 +28,17 @@ interface EditEntrySheetProps {
   onClose: () => void;
   onSave: (entry: ListEntryWithItem, edits: EntryEdits) => Promise<void>;
   onDelete: (entry: ListEntryWithItem) => Promise<void>;
+  /** Household members, for "For" on to-dos. */
+  members: Member[];
 }
 
-export function EditEntrySheet({ entry, listType, onClose, onSave, onDelete }: EditEntrySheetProps) {
+export function EditEntrySheet({ entry, listType, onClose, onSave, onDelete, members }: EditEntrySheetProps) {
   const [text, setText] = useState("");
   const [quantity, setQuantity] = useState("");
   const [note, setNote] = useState("");
   const [category, setCategory] = useState<string | null>(null);
+  const [dueDate, setDueDate] = useState<string | null>(null);
+  const [assignedTo, setAssignedTo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   // Step 1: load the entry's values each time the sheet opens.
@@ -39,6 +48,8 @@ export function EditEntrySheet({ entry, listType, onClose, onSave, onDelete }: E
     setQuantity(entry.quantity ?? "");
     setNote(entry.note ?? "");
     setCategory(entry.item?.category ?? null);
+    setDueDate(entry.due_date);
+    setAssignedTo(entry.assigned_to);
   }, [entry]);
 
   async function save() {
@@ -49,6 +60,8 @@ export function EditEntrySheet({ entry, listType, onClose, onSave, onDelete }: E
       quantity: quantity.trim() || null,
       note: note.trim() || null,
       category,
+      dueDate,
+      assignedTo,
     });
     setBusy(false);
     onClose();
@@ -108,6 +121,14 @@ export function EditEntrySheet({ entry, listType, onClose, onSave, onDelete }: E
             />
           </div>
         </div>
+
+        {/* To-dos: when, and for whom (unassigned shows on everyone's Today) */}
+        {listType === "todo" && (
+          <>
+            <DateField label="Due" value={dueDate} onChange={setDueDate} />
+            <MemberChips members={members} value={assignedTo} onChange={setAssignedTo} />
+          </>
+        )}
 
         {/* Aisle */}
         {listType === "shopping" && entry?.item && (

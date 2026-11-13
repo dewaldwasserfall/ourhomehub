@@ -13,6 +13,8 @@ export interface Caller {
   memberId: string;
   householdId: string;
   isOwner: boolean;
+  /** Owners and adults; children may only read and tick their own things. */
+  isAdult: boolean;
   timeZone: string;
 }
 
@@ -22,7 +24,7 @@ export function jsonError(status: number, code: string, message: string) {
   return NextResponse.json({ error: code, message }, { status });
 }
 
-export async function getCaller(opts: { ownerOnly?: boolean } = {}): Promise<CallerResult> {
+export async function getCaller(opts: { ownerOnly?: boolean; adultOnly?: boolean } = {}): Promise<CallerResult> {
   const supabase = await getSupabaseServerClient();
 
   // Step 1: signed in?
@@ -50,12 +52,17 @@ export async function getCaller(opts: { ownerOnly?: boolean } = {}): Promise<Cal
     memberId: member.id,
     householdId: householdId as string,
     isOwner: member.role === "owner",
+    isAdult: member.role === "owner" || member.role === "adult",
     timeZone: household?.timezone ?? "Europe/Amsterdam",
   };
 
   // Step 4: owner-only actions (connecting / disconnecting the calendar).
   if (opts.ownerOnly && !caller.isOwner) {
     return { ok: false, response: jsonError(403, "owner_only", "Only the household owner can change the calendar connection.") };
+  }
+  // Step 5: adult-only actions (calendar changes, holiday import).
+  if (opts.adultOnly && !caller.isAdult) {
+    return { ok: false, response: jsonError(403, "adults_only", "Ask a parent to make this change.") };
   }
   return { ok: true, caller };
 }
