@@ -166,6 +166,7 @@ export default function RoutinePage() {
         onClose={() => setEditingStep(null)}
         onSave={(fields) => saveStep(editingStep!, fields)}
         onDelete={() => deleteStep(editingStep!)}
+        supplyTask={editingStep ? { kind: "step", id: editingStep.id } : null}
       />
       {toast.node}
     </main>

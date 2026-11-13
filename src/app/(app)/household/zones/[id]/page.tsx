@@ -149,6 +149,7 @@ export default function ZonePage() {
         onClose={() => setEditing(null)}
         onSave={(fields) => saveTask(editing!, fields)}
         onDelete={() => deleteTask(editing!)}
+        supplyTask={editing ? { kind: "zone_task", id: editing.id } : null}
       />
       {toast.node}
     </main>

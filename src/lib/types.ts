@@ -212,3 +212,25 @@ export interface Completion {
   done_by: string | null;
   done_at: string;
 }
+
+/** A product that runs down with use (washing liquid: 40 uses a bottle). */
+export interface Supply {
+  id: string;
+  household_id: string;
+  item_id: string;
+  uses_per_pack: number;
+  uses_left: number;
+  /** Suggested on the shopping list at this many uses left. */
+  warn_at: number;
+  suggested_at_uses: number | null;
+  created_at: string;
+}
+
+/** A task that uses up a supply each time it's ticked. */
+export interface SupplyUse {
+  supply_id: string;
+  household_id: string;
+  kind: CompletionKind;
+  task_id: string;
+  created_at: string;
+}

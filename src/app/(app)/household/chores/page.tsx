@@ -14,6 +14,7 @@ import { Navbar } from "@/components/navbar";
 import { DateField, MemberChips, ModeChips } from "@/components/plan-controls";
 import { Segmented } from "@/components/segmented";
 import { Sheet } from "@/components/sheet";
+import { TaskSupplies } from "@/components/task-supplies";
 import { useToast } from "@/components/toast";
 import { dateKey } from "@/lib/calendar/time";
 import { friendlyError } from "@/lib/errors";
@@ -211,6 +212,7 @@ export default function ChoresPage() {
           <DateField label={editing?.chore ? "Next due" : "First due"} value={nextDue} onChange={setNextDue} clearable={false} />
           <ModeChips value={modes} onChange={setModes} />
           <MemberChips members={members} value={assignedTo} onChange={setAssignedTo} />
+          {editing?.chore && <TaskSupplies kind="chore" taskId={editing.chore.id} />}
           {editing?.chore && (
             <button type="button" className="button button--danger" onClick={remove}>
               {confirmDelete ? "Tap again to delete" : "Delete chore"}

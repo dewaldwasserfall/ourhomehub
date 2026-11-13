@@ -9,6 +9,7 @@
  */
 "use client";
 
+import { TaskSupplies } from "@/components/task-supplies";
 import { useEffect, useState } from "react";
 import { ALL_MODES } from "@/lib/plan";
 import type { DayMode, Member } from "@/lib/types";
@@ -34,9 +35,11 @@ interface StepSheetProps {
   onClose: () => void;
   onSave: (fields: StepFields) => Promise<void>;
   onDelete: () => Promise<void>;
+  /** The task, to show which supplies ticking it uses up. */
+  supplyTask?: { kind: "step" | "zone_task"; id: string } | null;
 }
 
-export function StepSheet({ item, heading, members, withSchedule, anyoneLabel, onClose, onSave, onDelete }: StepSheetProps) {
+export function StepSheet({ item, heading, members, withSchedule, anyoneLabel, onClose, onSave, onDelete, supplyTask }: StepSheetProps) {
   const [title, setTitle] = useState("");
   const [weekdays, setWeekdays] = useState<number[]>([]);
   const [modes, setModes] = useState<DayMode[]>(ALL_MODES);
@@ -98,6 +101,7 @@ export function StepSheet({ item, heading, members, withSchedule, anyoneLabel, o
           </>
         )}
         <MemberChips members={members} value={assignedTo} onChange={setAssignedTo} anyoneLabel={anyoneLabel} />
+        {supplyTask && <TaskSupplies kind={supplyTask.kind} taskId={supplyTask.id} />}
         <button
           type="button"
           className="button button--danger"

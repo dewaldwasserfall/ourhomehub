@@ -2352,3 +2352,48 @@ textarea.input {
   font-variant-numeric: tabular-nums;
   color: var(--ink-3);
 }
+
+/* --------------------------------------------------------------------------
+   Supplies: a thin level bar under the product name
+   -------------------------------------------------------------------------- */
+.supply-bar {
+  display: block;
+  height: 6px;
+  margin: 6px 0 4px;
+  border-radius: 3px;
+  background: var(--fill);
+  overflow: hidden;
+}
+
+.supply-bar__fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.supply-bar--low .supply-bar__fill {
+  background: #ff9500;
+}
+
+.supply-bar--out .supply-bar__fill {
+  background: #ff3b30;
+}
+
+/* The group name heading a block of tasks in the picker. */
+.supply-task-group {
+  min-height: 0;
+  padding-top: 8px;
+  padding-bottom: 4px;
+}
+
+.supply-task-check {
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .supply-bar__fill {
+    transition: none;
+  }
+}

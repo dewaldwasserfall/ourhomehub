@@ -290,3 +290,11 @@ export const ReviewIcon = (p: IconProps) => (
     <path d="M3.5 9h17M8 3v3M16 3v3M8 13.5l2.2 2.2L16 12" />
   </Svg>
 );
+
+/** Supplies: a bottle */
+export const SupplyIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M10 3h4v3l2 2.5V19a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2V8.5L10 6z" />
+    <path d="M8 13h8" />
+  </Svg>
+);

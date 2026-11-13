@@ -147,6 +147,7 @@ beforeAll(async () => {
     "20261113001200_grocery_budget.sql",
     "20261113001300_stars_rewards.sql",
     "20261113001400_weekly_review.sql",
+    "20261113001500_supplies.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -1093,5 +1094,72 @@ describe("weekly review", () => {
     await db.exec(`reset role; set role service_role;`);
     const server = (await one<{ r: { people: unknown[] } }>(`select public.week_counts($1, '2030-01-07', '2030-01-13') as r`, [householdId])).r;
     expect(server.people.length).toBeGreaterThan(0);
+  });
+});
+
+describe("supplies", () => {
+  it("uses up with ticks, suggests once at the threshold and tops up when bought", async () => {
+    await actAs("dewald");
+    // The product, bought once by hand (2 bottles), and the washing chore.
+    const firstLine = (await one<{ id: string }>(`select public.add_entry($1, 'Washing liquid', '2') as id`, [groceriesListId])).id;
+    const itemId = (await one<{ item_id: string }>(`select item_id from public.list_entries where id = $1`, [firstLine])).item_id;
+    const chore = (
+      await one<{ id: string }>(
+        `insert into public.chores (household_id, title, every_n, unit, next_due) values ($1, 'Do the washing', 1, 'day', '2030-02-01') returning id`,
+        [householdId],
+      )
+    ).id;
+    const supply = (
+      await one<{ id: string }>(
+        `insert into public.supplies (household_id, item_id, uses_per_pack, uses_left, warn_at) values ($1, $2, 3, 0, 1) returning id`,
+        [householdId, itemId],
+      )
+    ).id;
+    await db.query(`insert into public.supply_uses (supply_id, household_id, kind, task_id) values ($1, $2, 'chore', $3)`, [supply, householdId, chore]);
+    const left = async () => (await one<{ n: number }>(`select uses_left as n from public.supplies where id = $1`, [supply])).n;
+    const openLines = async () =>
+      all<{ note: string | null; source: string }>(`select note, source from public.list_entries where item_id = $1 and status = 'open'`, [itemId]);
+
+    // Bought: 2 packs of 3. Unticking takes them off; ticking again adds them back.
+    await db.query(`update public.list_entries set status = 'done' where id = $1`, [firstLine]);
+    expect(await left()).toBe(6);
+    await db.query(`update public.list_entries set status = 'open' where id = $1`, [firstLine]);
+    expect(await left()).toBe(0);
+    await db.query(`update public.list_entries set status = 'done' where id = $1`, [firstLine]);
+    expect(await left()).toBe(6);
+
+    // A tick uses one; unticking gives it back.
+    const tick = (day: string, done = true) => db.query(`select public.set_completion('chore', $1, $2, $3)`, [chore, day, done]);
+    await tick("2030-02-01");
+    expect(await left()).toBe(5);
+    await tick("2030-02-01", false);
+    expect(await left()).toBe(6);
+
+    // Down to the threshold (1): suggested once, with how much is left.
+    for (const day of ["2030-02-01", "2030-02-02", "2030-02-03", "2030-02-04", "2030-02-05"]) await tick(day);
+    expect(await left()).toBe(1);
+    expect(await openLines()).toEqual([{ note: "About 1 use left", source: "suggested" }]);
+    // Running out while it's on the list doesn't add it twice.
+    await tick("2030-02-06");
+    expect(await left()).toBe(0);
+    expect(await openLines()).toHaveLength(1);
+
+    // A product by name: finds the same item, plural or not.
+    expect((await one<{ id: string }>(`select public.ensure_item('washing liquids') as id`)).id).toBe(itemId);
+
+    // Children see supplies but can't change them.
+    await actAs("kid");
+    await expect(db.query(`select public.ensure_item('Softener')`)).rejects.toThrow(/adults_only/);
+    expect(await all(`select id from public.supplies`)).toHaveLength(1);
+    await expect(db.query(`update public.supplies set uses_left = 99 where id = $1`, [supply])).resolves.toMatchObject({ affectedRows: 0 });
+    await expect(
+      db.query(`insert into public.supply_uses (supply_id, household_id, kind, task_id) values ($1, $2, 'chore', gen_random_uuid())`, [supply, householdId]),
+    ).rejects.toThrow();
+
+    // Deleting the task removes its links but doesn't give uses back.
+    await actAs("dewald");
+    await db.query(`delete from public.chores where id = $1`, [chore]);
+    expect(await all(`select * from public.supply_uses where supply_id = $1`, [supply])).toHaveLength(0);
+    expect(await left()).toBe(0);
   });
 });
