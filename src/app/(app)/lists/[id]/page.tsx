@@ -25,6 +25,7 @@ import { friendlyError } from "@/lib/errors";
 import { dateKey } from "@/lib/calendar/time";
 import { describeDay } from "@/lib/plan";
 import { canTick } from "@/lib/roles";
+import { enqueue, isNetworkError } from "@/lib/offline";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { ItemWithPattern, ListEntryWithItem } from "@/lib/types";
 import { useListData } from "@/lib/use-list-data";
@@ -36,7 +37,7 @@ export default function ListPage() {
   const { id } = useParams<{ id: string }>();
   const supabase = getSupabaseBrowserClient();
   const { me, members, household, meIsAdult, memberByUserId, memberById } = useHousehold();
-  const { list, entries, catalogue, loading, notFound, reload, reloadCatalogue, setStatus, removeEntry, clearCompleted } =
+  const { list, entries, catalogue, loading, notFound, reload, reloadCatalogue, setStatus, removeEntry, clearCompleted, addPendingLine } =
     useListData(id);
   const toast = useToast();
 
@@ -114,12 +115,19 @@ export default function ListPage() {
   const add = useCallback(
     async (name: string, quantity: string | null, known?: ItemWithPattern) => {
       if (!list) return false;
+      const category = isShopping ? (known?.category ?? guessCategory(name)) : null;
       const { error } = await supabase.rpc("add_entry", {
         p_list_id: list.id,
         p_text: name,
         p_quantity: quantity,
-        p_category: isShopping ? (known?.category ?? guessCategory(name)) : null,
+        p_category: category,
       });
+      // No connection: queue it, and show it straight away as a pending line.
+      if (error && isNetworkError(error)) {
+        enqueue({ type: "add_entry", listId: list.id, text: name, quantity, category });
+        addPendingLine(name, quantity);
+        return true;
+      }
       if (error) {
         toast.show(friendlyError(error));
         return false;
@@ -128,7 +136,7 @@ export default function ListPage() {
       if (isShopping) reloadCatalogue();
       return true;
     },
-    [supabase, list, isShopping, reload, reloadCatalogue, toast],
+    [supabase, list, isShopping, reload, reloadCatalogue, toast, addPendingLine],
   );
 
   /** "Not now" on a suggestion: the engine learns to wait longer. */

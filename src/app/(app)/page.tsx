@@ -24,7 +24,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "@/components/avatar";
 import { CheckCircle } from "@/components/check-circle";
 import { useHousehold } from "@/components/household-context";
-import { CartIcon, ChevronDownIcon, ChevronRightIcon, GlowSparkle } from "@/components/icons";
+import { CartIcon, ChevronDownIcon, ChevronRightIcon, GlowSparkle, ReviewIcon } from "@/components/icons";
+import { isReviewDay } from "@/lib/review";
 import { Navbar } from "@/components/navbar";
 import { useToast } from "@/components/toast";
 import { expandForRange, groupByDay } from "@/lib/calendar/expand";
@@ -38,6 +39,7 @@ import { euros } from "@/lib/budget";
 import { binColour, binList, binsAround } from "@/lib/bins";
 import { useBudget } from "@/lib/use-budget";
 import { useStars } from "@/lib/use-stars";
+import { enqueue, isNetworkError, readCache, SYNCED_EVENT, writeCache } from "@/lib/offline";
 import { StarCard } from "@/components/star-card";
 import { canSeeFinances, canTick } from "@/lib/roles";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -163,17 +165,29 @@ export default function TodayPage() {
       supabase.from("lists").select("id, name").eq("is_default", true).maybeSingle<{ id: string; name: string }>(),
       supabase.from("list_entries").select("list_id, source, list:lists!inner(is_default)").eq("status", "open").eq("list.is_default", true),
     ]);
-    setDayInfo(((infoRes.data ?? []) as DayInfo[])[0] ?? null);
-    setTodos((todoRes.data ?? []) as Array<ListEntry & { list: { name: string } }>);
+    // Offline: the copy from the last time Today loaded (same day only).
+    if (infoRes.error && isNetworkError(infoRes.error)) {
+      const cached = readCache<{ day: string; info: DayInfo; todos: typeof todos; groceries: typeof groceries }>(`today:${household.id}`);
+      if (cached && cached.day === today) {
+        setDayInfo(cached.info);
+        setTodos(cached.todos);
+        setGroceries(cached.groceries);
+      }
+      return;
+    }
+    const info = ((infoRes.data ?? []) as DayInfo[])[0] ?? null;
+    const todoLines = (todoRes.data ?? []) as Array<ListEntry & { list: { name: string } }>;
+    let grocery: typeof groceries = null;
     if (listRes.data) {
       const lines = (groceryRes.data ?? []) as Array<{ source: string }>;
-      setGroceries({
-        ...listRes.data,
-        open: lines.length,
-        suggested: lines.filter((l) => l.source === "suggested").length,
-      });
+      grocery = { ...listRes.data, open: lines.length, suggested: lines.filter((l) => l.source === "suggested").length };
     }
-  }, [supabase, today]);
+    setDayInfo(info);
+    setTodos(todoLines);
+    setGroceries(grocery);
+    writeCache(`today:${household.id}`, { day: today, info, todos: todoLines, groceries: grocery });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, today, household.id]);
 
   // Reload when the day changes, when holidays change, and live on list changes.
   const overridesVersion = plan.overrides.map((o) => `${o.id}:${o.start_date}:${o.end_date}:${o.kind}`).join("|");
@@ -187,8 +201,10 @@ export default function TodayPage() {
       .subscribe();
     const onVisible = () => document.visibilityState === "visible" && (setNow(new Date()), loadDay());
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener(SYNCED_EVENT, loadDay);
     return () => {
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener(SYNCED_EVENT, loadDay);
       supabase.removeChannel(channel);
     };
   }, [supabase, household.id, loadDay]);
@@ -325,7 +341,14 @@ export default function TodayPage() {
       }
       const write = async () => {
         if (item.kind === "todo") {
-          const { error } = await supabase.from("list_entries").update({ status: item.done ? "open" : "done" }).eq("id", item.id);
+          const status = item.done ? "open" : "done";
+          const { error } = await supabase.from("list_entries").update({ status }).eq("id", item.id);
+          if (error && isNetworkError(error)) {
+            // Offline: send later; hide it from today's list now.
+            enqueue({ type: "set_status", entryId: item.id, status });
+            setTodos((current) => current.filter((t) => t.id !== item.id));
+            return;
+          }
           if (error) toast.show(friendlyError(error));
           await loadDay();
         } else {
@@ -335,6 +358,21 @@ export default function TodayPage() {
             p_for_date: today,
             p_done: !item.done,
           });
+          if (error && isNetworkError(error)) {
+            // Offline: send later; show the tick now.
+            enqueue({ type: "set_completion", kind: item.kind, itemId: item.id, forDate: today, done: !item.done });
+            plan.setData((d) => ({
+              ...d,
+              completions: item.done
+                ? d.completions.filter((c) => !(c.kind === item.kind && c.item_id === item.id && c.for_date === today))
+                : [
+                    ...d.completions,
+                    { id: `pending-${item.id}`, household_id: household.id, kind: item.kind as "step", item_id: item.id, for_date: today, done_by: me.id, done_at: new Date().toISOString() },
+                  ],
+              chores: item.kind === "chore" ? d.chores.filter((c) => c.id !== item.id) : d.chores,
+            }));
+            return;
+          }
           if (error) toast.show(friendlyError(error));
           await plan.reload();
         }
@@ -354,7 +392,7 @@ export default function TodayPage() {
         }, TICK_SETTLE_MS),
       );
     },
-    [supabase, today, toast, loadDay, plan, isChild],
+    [supabase, today, toast, loadDay, plan, isChild, household.id, me.id],
   );
 
   const tickRow = (item: TickItem) => (
@@ -488,6 +526,22 @@ export default function TodayPage() {
           </section>
         );
       })()}
+
+      {/* Sunday: a nudge to look back at the week (adults) */}
+      {!isChild && isReviewDay(today) && (
+        <section className="section">
+          <Link href="/review" className="group row row--link">
+            <span className="row__icon" style={{ background: "#30b0c7" }}>
+              <ReviewIcon size={19} strokeWidth={2} />
+            </span>
+            <span className="row__body">
+              <span className="row__title">Week review</span>
+              <span className="row__subtitle">What got done this week, and what&rsquo;s coming</span>
+            </span>
+            <ChevronRightIcon className="row__chevron" size={16} />
+          </Link>
+        </section>
+      )}
 
       {/* Stars (children) */}
       {isChild && (

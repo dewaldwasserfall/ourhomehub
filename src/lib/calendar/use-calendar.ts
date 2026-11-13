@@ -8,6 +8,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { readCache, writeCache } from "../offline";
 import { getSupabaseBrowserClient } from "../supabase/client";
 import type { CalendarConnectionStatus, CalendarEventRow, EventInput } from "./types";
 
@@ -64,13 +65,31 @@ export function useCalendar(householdId: string) {
 
   const load = useCallback(async () => {
     const [events, statusRes] = await Promise.all([loadAllEvents(), supabase.rpc("calendar_connection_status")]);
-    if (events) setRows(events);
+    const cacheKey = `calendar:${householdId}`;
+    if (events) {
+      setRows(events);
+      // Offline copy: every repeating series and its exceptions, plus one-off
+      // events from a week ago onwards (keeps it small enough for the phone).
+      const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
+      writeCache(
+        cacheKey,
+        events.filter((e) => e.recurrence || e.recurring_event_id || (e.end_at ?? `${e.end_date}T00:00:00Z`) >= weekAgo),
+      );
+    } else {
+      // No connection: show the last copy.
+      const cached = readCache<CalendarEventRow[]>(cacheKey);
+      if (cached) setRows(cached);
+    }
     if (!statusRes.error) {
       const list = (statusRes.data ?? []) as CalendarConnectionStatus[];
       setStatus(list[0] ?? null);
+      writeCache(`calendar-status:${householdId}`, list[0] ?? null);
+    } else {
+      const cachedStatus = readCache<CalendarConnectionStatus | null>(`calendar-status:${householdId}`);
+      if (cachedStatus !== null) setStatus(cachedStatus);
     }
     setLoading(false);
-  }, [supabase, loadAllEvents]);
+  }, [supabase, loadAllEvents, householdId]);
 
   // Step 2: ask the server to pull from Google now, then reload.
   const sync = useCallback(async () => {

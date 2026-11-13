@@ -15,6 +15,7 @@ import type { BinDay } from "../bins";
 import { expandForRange } from "../calendar/expand";
 import { addDays, dateKey, wallTimeOf } from "../calendar/time";
 import type { CalendarEventRow } from "../calendar/types";
+import { isReviewDay, reviewWeeks, weeklyReviewNotice, type WeekCounts } from "../review";
 import { getSupabaseAdminClient } from "../supabase/admin";
 import type { Chore, Completion, DayMode, Member, Routine, RoutineStep } from "../types";
 import {
@@ -32,6 +33,9 @@ import {
   type TodoLine,
 } from "./due";
 import { VAPID_PUBLIC_KEY, VAPID_SUBJECT } from "./config";
+
+/** The week review goes out on Sunday at this time. */
+export const WEEKLY_REVIEW_TIME = "19:00";
 
 interface Subscription {
   id: string;
@@ -166,10 +170,32 @@ export async function runNotifications(now = new Date()) {
         (p) => (p.bins && isTimeFor(nowMinutes, p.bins_time)) || (p.bins_morning && isTimeFor(nowMinutes, p.bins_morning_time)),
       );
 
+      // Week review: Sunday evening, adults who kept it on.
+      const reviewTime = isReviewDay(today) && isTimeFor(nowMinutes, WEEKLY_REVIEW_TIME);
+      const needReview = reviewTime && wants((p, m) => p.weekly_review && m.role !== "child");
+
       let binDays: BinDay[] = [];
       if (needBins) {
         const { data } = await admin.from("bin_days").select("*").eq("household_id", householdId).gte("date", today).lte("date", addDays(today, 1));
         binDays = (data ?? []) as BinDay[];
+      }
+
+      let review: ReturnType<typeof weeklyReviewNotice> = null;
+      if (needReview) {
+        const weeks = reviewWeeks(today);
+        const [{ data: counts }, { data: nextBins }, { data: allMembers }] = await Promise.all([
+          admin.rpc("week_counts", { p_household_id: householdId, p_from: weeks.from, p_to: weeks.to }),
+          admin.from("bin_days").select("*").eq("household_id", householdId).gte("date", weeks.nextFrom).lte("date", weeks.nextTo),
+          admin.from("members").select("id, display_name").eq("household_id", householdId),
+        ]);
+        if (counts) {
+          review = weeklyReviewNotice(
+            counts as WeekCounts,
+            (allMembers ?? []) as Array<Pick<Member, "id" | "display_name">>,
+            (nextBins ?? []) as BinDay[],
+            today,
+          );
+        }
       }
 
       const occurrences = needEvents ? expandForRange(await loadCalendarRows(householdId), today, addDays(today, 1), tz) : [];
@@ -250,6 +276,7 @@ export async function runNotifications(now = new Date()) {
           const b = binMorningReminder(binDays, today);
           if (b) notices.push(b);
         }
+        if (review && prefs.weekly_review && member.role !== "child") notices.push(review);
         if (prefs.routine_nudge && isTimeFor(nowMinutes, prefs.routine_nudge_time)) {
           notices.push(...routineNudges(member, routines, steps, completions, today, mode));
         }

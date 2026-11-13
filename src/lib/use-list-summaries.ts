@@ -5,6 +5,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { isNetworkError, readCache, writeCache } from "./offline";
 import { getSupabaseBrowserClient } from "./supabase/client";
 import type { List } from "./types";
 
@@ -25,14 +26,18 @@ export function useListSummaries(opts: { refreshSuggestions?: boolean } = {}) {
       supabase.from("lists").select("*").order("sort_order").order("created_at"),
       supabase.from("list_entries").select("list_id, source").eq("status", "open"),
     ]);
+    if (listsRes.error && isNetworkError(listsRes.error)) {
+      setLists(readCache<ListSummary[]>("list-summaries") ?? []);
+      return;
+    }
     const openLines = (openRes.data ?? []) as Array<{ list_id: string; source: string }>;
-    setLists(
-      ((listsRes.data ?? []) as List[]).map((l) => ({
-        ...l,
-        open: openLines.filter((o) => o.list_id === l.id).length,
-        suggested: openLines.filter((o) => o.list_id === l.id && o.source === "suggested").length,
-      })),
-    );
+    const summaries = ((listsRes.data ?? []) as List[]).map((l) => ({
+      ...l,
+      open: openLines.filter((o) => o.list_id === l.id).length,
+      suggested: openLines.filter((o) => o.list_id === l.id && o.source === "suggested").length,
+    }));
+    setLists(summaries);
+    writeCache("list-summaries", summaries);
   }, [supabase, refreshSuggestions]);
 
   // Step 2: first load, live counts while lines change, and a catch-up when

@@ -2270,3 +2270,85 @@ textarea.input {
   align-items: center;
   gap: 8px;
 }
+
+/* --------------------------------------------------------------------------
+   Offline banner: a small pill at the top while there's no connection or
+   changes are waiting to be sent.
+   -------------------------------------------------------------------------- */
+.offline-banner {
+  position: fixed;
+  top: calc(var(--safe-top) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--canvas);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------------------
+   Week review
+   -------------------------------------------------------------------------- */
+.review-headline {
+  font-weight: 600;
+}
+
+.review-total {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* One row per day: the date on the left, notes and events stacked. */
+.review-day {
+  align-items: flex-start;
+}
+
+.review-day__date {
+  flex: 0 0 92px;
+  font-weight: 600;
+  font-size: 15px;
+  padding-top: 1px;
+}
+
+.review-day__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.review-day__quiet {
+  color: var(--ink-3);
+  font-size: 15px;
+}
+
+.review-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+}
+
+.review-note--mode {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.review-event {
+  display: flex;
+  gap: 8px;
+  font-size: 15px;
+  color: var(--ink-2);
+}
+
+.review-event__time {
+  flex: 0 0 48px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+}

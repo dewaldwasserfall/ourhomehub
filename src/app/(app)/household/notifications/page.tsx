@@ -230,6 +230,12 @@ export default function NotificationsPage() {
               checked={prefs.list_added}
               onChange={(v) => set("list_added", v)}
             />
+            <SwitchRow
+              label="Week review"
+              hint="Sunday at 19:00: what got done and next week's bins"
+              checked={prefs.weekly_review}
+              onChange={(v) => set("weekly_review", v)}
+            />
           </div>
         )}
         <p className="section__footer">

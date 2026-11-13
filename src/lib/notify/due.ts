@@ -36,6 +36,8 @@ export interface Prefs {
   /** Morning of collection. */
   bins_morning: boolean;
   bins_morning_time: string;
+  /** Sunday 19:00: the week review (adults only). */
+  weekly_review: boolean;
 }
 
 /**
@@ -56,6 +58,7 @@ export function defaultPrefs(role: Member["role"]): Prefs {
     bins_time: "19:00",
     bins_morning: !child,
     bins_morning_time: "07:00",
+    weekly_review: !child,
   };
 }
 

@@ -9,6 +9,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isNetworkError, readCache, SYNCED_EVENT, writeCache } from "./offline";
 import { getSupabaseBrowserClient } from "./supabase/client";
 import type { BinDay } from "./bins";
 import type { Chore, Completion, DayOverride, Routine, RoutineStep, Zone, ZoneTask } from "./types";
@@ -49,7 +50,15 @@ export function usePlanData(householdId: string, completionsFrom: string) {
       supabase.from("completions").select("*").gte("for_date", completionsFrom),
       supabase.from("bin_days").select("*").gte("date", completionsFrom).order("date"),
     ]);
-    setData({
+    // Offline: the last full copy (a partial load would hide things).
+    const failed = [routines, steps, zones, zoneTasks, chores, overrides, completions, binDays].find((r) => r.error);
+    if (failed && isNetworkError(failed.error)) {
+      const cached = readCache<PlanData>(`plan:${householdId}`);
+      if (cached) setData(cached);
+      setLoading(false);
+      return;
+    }
+    const next: PlanData = {
       routines: (routines.data ?? []) as Routine[],
       steps: (steps.data ?? []) as RoutineStep[],
       zones: (zones.data ?? []) as Zone[],
@@ -58,9 +67,11 @@ export function usePlanData(householdId: string, completionsFrom: string) {
       overrides: (overrides.data ?? []) as DayOverride[],
       completions: (completions.data ?? []) as Completion[],
       binDays: (binDays.data ?? []) as BinDay[],
-    });
+    };
+    setData(next);
+    writeCache(`plan:${householdId}`, next);
     setLoading(false);
-  }, [supabase, completionsFrom]);
+  }, [supabase, completionsFrom, householdId]);
 
   // Step 2: first load, live changes from other phones, and a catch-up when
   //         the app comes back to the foreground.
@@ -79,9 +90,11 @@ export function usePlanData(householdId: string, completionsFrom: string) {
     channel.subscribe();
     const onVisible = () => document.visibilityState === "visible" && schedule();
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener(SYNCED_EVENT, schedule);
     return () => {
       clearTimeout(reloadTimer.current);
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener(SYNCED_EVENT, schedule);
       supabase.removeChannel(channel);
     };
   }, [supabase, householdId, load]);

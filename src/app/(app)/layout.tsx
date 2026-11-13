@@ -7,6 +7,7 @@
  */
 import { redirect } from "next/navigation";
 import { HouseholdProvider } from "@/components/household-context";
+import { OfflineBanner } from "@/components/offline-banner";
 import { ServiceWorker } from "@/components/service-worker";
 import { Sidebar } from "@/components/sidebar";
 import { TabBar } from "@/components/tab-bar";
@@ -43,6 +44,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="app-main">{children}</div>
       <TabBar />
       <ServiceWorker />
+      <OfflineBanner />
     </HouseholdProvider>
   );
 }

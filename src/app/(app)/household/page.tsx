@@ -18,6 +18,7 @@ import {
   BellIcon,
   BinIcon,
   ChevronRightIcon,
+  ReviewIcon,
   ChoreIcon,
   HolidayIcon,
   RefreshIcon,
@@ -30,14 +31,16 @@ import {
 import { Navbar } from "@/components/navbar";
 import { ThemePicker } from "@/components/theme-picker";
 import { friendlyError } from "@/lib/errors";
+import { clearOfflineData } from "@/lib/offline";
 import { canSeeFinances, roleLabel } from "@/lib/roles";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
-/** The four planning screens, each a row with a coloured icon. */
+/** The planning screens, each a row with a coloured icon. */
 const PLAN_LINKS = [
   { href: "/household/routines", title: "Routines", subtitle: "Morning, after-school and evening checklists", Icon: RoutineIcon, colour: "#ff9500" },
   { href: "/household/zones", title: "Zones", subtitle: "One part of the house each fortnight", Icon: ZoneIcon, colour: "#5856d6" },
   { href: "/household/chores", title: "Chores", subtitle: "Jobs that come round every few days or weeks", Icon: ChoreIcon, colour: "#34aadc" },
+  { href: "/review", title: "Week review", subtitle: "What got done, and what's coming next week", Icon: ReviewIcon, colour: "#30b0c7" },
   { href: "/stars", title: "Stars and rewards", subtitle: "What the kids earn for ticking things off", Icon: StarIcon, colour: "#ffb800" },
   { href: "/household/bins", title: "Bin days", subtitle: "Collection dates from the Afvalservice app", Icon: BinIcon, colour: "#2f9e44" },
   { href: "/household/holidays", title: "School holidays", subtitle: "Holidays, public holidays and days off", Icon: HolidayIcon, colour: "#ff2d55" },
@@ -102,6 +105,8 @@ export default function HouseholdPage() {
   }
 
   async function signOut() {
+    // Step: forget this device's offline copies and unsent changes first.
+    await clearOfflineData();
     await supabase.auth.signOut();
     router.replace("/login");
     router.refresh();

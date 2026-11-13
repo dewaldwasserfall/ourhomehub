@@ -146,6 +146,7 @@ beforeAll(async () => {
     "20261113001100_bins_morning.sql",
     "20261113001200_grocery_budget.sql",
     "20261113001300_stars_rewards.sql",
+    "20261113001400_weekly_review.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -1053,5 +1054,44 @@ describe("stars and rewards", () => {
     const dewald = (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS.dewald.id])).id;
     await actAs("kid");
     await expect(db.query(`select * from public.member_stars($1, '2026-11-16')`, [dewald])).rejects.toThrow(/not_assigned_to_you/);
+  });
+});
+
+describe("weekly review", () => {
+  it("counts each person's ticks by the household's own days, for adults only", async () => {
+    await actAsAdmin();
+    const dewald = (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS.dewald.id])).id;
+    const kid = (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS.kid.id])).id;
+    // A week far from the other tests' data (Mon 7 to Sun 13 Jan 2030).
+    // 23:30 UTC on the 6th is 00:30 on the 7th in Amsterdam -> counts;
+    // 22:30 UTC on the 6th is 23:30 on the 6th in Amsterdam -> doesn't.
+    await db.query(
+      `insert into public.completions (household_id, kind, item_id, for_date, done_by, done_at) values
+         ($1, 'step', gen_random_uuid(), '2030-01-07', $2, '2030-01-06 23:30+00'),
+         ($1, 'chore', gen_random_uuid(), '2030-01-09', $2, '2030-01-09 10:00+00'),
+         ($1, 'step', gen_random_uuid(), '2030-01-08', $3, '2030-01-08 07:00+00'),
+         ($1, 'step', gen_random_uuid(), '2030-01-06', $3, '2030-01-06 22:30+00')`,
+      [householdId, dewald, kid],
+    );
+
+    await actAs("partner");
+    const counts = (await one<{ r: { people: Array<{ member_id: string; steps: number; chores: number }>; shopping_bought: number } }>(
+      `select public.weekly_review('2030-01-07', '2030-01-13') as r`,
+    )).r;
+    const of = (id: string) => counts.people.find((p) => p.member_id === id)!;
+    expect(of(dewald)).toMatchObject({ steps: 1, chores: 1 });
+    expect(of(kid)).toMatchObject({ steps: 1, chores: 0 });
+    expect(counts.shopping_bought).toBe(0);
+
+    // Children can't, nor can a range longer than a month.
+    await expect(db.query(`select public.weekly_review('2030-01-01', '2030-03-01')`)).rejects.toThrow(/invalid_range/);
+    await actAs("kid");
+    await expect(db.query(`select public.weekly_review('2030-01-07', '2030-01-13')`)).rejects.toThrow(/adults_only/);
+    // The server-side version takes any household: never from the browser.
+    await actAs("dewald");
+    await expect(db.query(`select public.week_counts($1, '2030-01-07', '2030-01-13')`, [householdId])).rejects.toThrow(/permission denied/);
+    await db.exec(`reset role; set role service_role;`);
+    const server = (await one<{ r: { people: unknown[] } }>(`select public.week_counts($1, '2030-01-07', '2030-01-13') as r`, [householdId])).r;
+    expect(server.people.length).toBeGreaterThan(0);
   });
 });

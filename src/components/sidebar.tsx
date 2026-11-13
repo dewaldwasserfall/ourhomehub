@@ -22,6 +22,7 @@ import {
   HolidayIcon,
   HomeIcon,
   ListsIcon,
+  ReviewIcon,
   RhythmIcon,
   RoutineIcon,
   StarIcon,
@@ -74,12 +75,17 @@ export function Sidebar() {
       {/* Step 3: main sections */}
       <div className="sidebar__group">{MAIN.map(({ href, label, Icon, match }) => link(href, label, Icon, match(pathname)))}</div>
 
-      {/* Step 3a: stars (when the household has children) */}
+      {/* Step 3a: week review (adults) */}
+      {meIsAdult && (
+        <div className="sidebar__group">{link("/review", "Week review", ReviewIcon, pathname.startsWith("/review"))}</div>
+      )}
+
+      {/* Step 3b: stars (when the household has children) */}
       {members.some((m) => m.role === "child") && (
         <div className="sidebar__group">{link(STARS.href, STARS.label, StarIcon, pathname.startsWith("/stars"))}</div>
       )}
 
-      {/* Step 3b: money (only for those the owner gave access) */}
+      {/* Step 3c: money (only for those the owner gave access) */}
       {canSeeFinances(me) && (
         <div className="sidebar__group">
           {link("/budget", "Groceries budget", WalletIcon, pathname.startsWith("/budget"))}
