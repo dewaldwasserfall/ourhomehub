@@ -23,6 +23,7 @@ import {
   RefreshIcon,
   RoutineIcon,
   ShareIcon,
+  StarIcon,
   WalletIcon,
   ZoneIcon,
 } from "@/components/icons";
@@ -37,6 +38,7 @@ const PLAN_LINKS = [
   { href: "/household/routines", title: "Routines", subtitle: "Morning, after-school and evening checklists", Icon: RoutineIcon, colour: "#ff9500" },
   { href: "/household/zones", title: "Zones", subtitle: "One part of the house each fortnight", Icon: ZoneIcon, colour: "#5856d6" },
   { href: "/household/chores", title: "Chores", subtitle: "Jobs that come round every few days or weeks", Icon: ChoreIcon, colour: "#34aadc" },
+  { href: "/stars", title: "Stars and rewards", subtitle: "What the kids earn for ticking things off", Icon: StarIcon, colour: "#ffb800" },
   { href: "/household/bins", title: "Bin days", subtitle: "Collection dates from the Afvalservice app", Icon: BinIcon, colour: "#2f9e44" },
   { href: "/household/holidays", title: "School holidays", subtitle: "Holidays, public holidays and days off", Icon: HolidayIcon, colour: "#ff2d55" },
 ];

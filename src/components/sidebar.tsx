@@ -24,11 +24,14 @@ import {
   ListsIcon,
   RhythmIcon,
   RoutineIcon,
+  StarIcon,
   SunIcon,
   WalletIcon,
   ZoneIcon,
 } from "./icons";
 import { canSeeFinances, roleLabel } from "@/lib/roles";
+
+const STARS = { href: "/stars", label: "Stars" };
 
 const MAIN = [
   { href: "/", label: "Today", Icon: SunIcon, match: (p: string) => p === "/" },
@@ -48,7 +51,7 @@ const PLAN = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { household, me, meIsAdult } = useHousehold();
+  const { household, me, meIsAdult, members } = useHousehold();
 
   // Step 1: one nav link, highlighted when its section is open.
   const link = (href: string, label: string, Icon: typeof SunIcon, active: boolean) => (
@@ -70,6 +73,11 @@ export function Sidebar() {
 
       {/* Step 3: main sections */}
       <div className="sidebar__group">{MAIN.map(({ href, label, Icon, match }) => link(href, label, Icon, match(pathname)))}</div>
+
+      {/* Step 3a: stars (when the household has children) */}
+      {members.some((m) => m.role === "child") && (
+        <div className="sidebar__group">{link(STARS.href, STARS.label, StarIcon, pathname.startsWith("/stars"))}</div>
+      )}
 
       {/* Step 3b: money (only for those the owner gave access) */}
       {canSeeFinances(me) && (

@@ -2218,3 +2218,55 @@ textarea.input {
   background: var(--accent);
   opacity: 0.6;
 }
+
+
+/* -----------------------------------------------------------------------------
+   21. Stars
+   -------------------------------------------------------------------------- */
+.star-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.star-card__numbers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  font-size: 16px;
+}
+
+.star-card__stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.star-card__stat strong {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.star-card__star {
+  color: #f5b400;
+  fill: #f5b400;
+}
+
+.star-card__flame {
+  color: #ff6b2c;
+}
+
+.star-card__next {
+  display: grid;
+  gap: 6px;
+}
+
+.star-fill {
+  background: #f5b400;
+}
+
+.star-kid {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}

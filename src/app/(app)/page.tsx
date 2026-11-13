@@ -37,6 +37,8 @@ import { BudgetBar, statusText } from "@/components/budget-bar";
 import { euros } from "@/lib/budget";
 import { binColour, binList, binsAround } from "@/lib/bins";
 import { useBudget } from "@/lib/use-budget";
+import { useStars } from "@/lib/use-stars";
+import { StarCard } from "@/components/star-card";
 import { canSeeFinances, canTick } from "@/lib/roles";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { CompletionKind, DayInfo, ListEntry, Member, TimeOfDay } from "@/lib/types";
@@ -145,6 +147,9 @@ export default function TodayPage() {
   const [showEveryone, setShowEveryone] = useState(false);
   // Grocery budget: only loads for members the owner gave access.
   const budget = useBudget(household.id, tz, canSeeFinances(me));
+  // Children see their own stars on Today.
+  const isChild = me.role === "child";
+  const stars = useStars(isChild ? [me.id] : [], today);
 
   // Step 2c: today's mode, to-dos and the groceries line.
   const loadDay = useCallback(async () => {
@@ -334,6 +339,8 @@ export default function TodayPage() {
           await plan.reload();
         }
       };
+      // Children earn a star for everything they tick off themselves.
+      if (isChild && !item.done) toast.show("+1 star");
       // Unticking (or ticking a routine step, which stays in place) is instant;
       // to-dos, chores and zone tasks leave the list, so they show their tick first.
       if (item.done || item.kind === "step") return void write();
@@ -347,7 +354,7 @@ export default function TodayPage() {
         }, TICK_SETTLE_MS),
       );
     },
-    [supabase, today, toast, loadDay, plan],
+    [supabase, today, toast, loadDay, plan, isChild],
   );
 
   const tickRow = (item: TickItem) => (
@@ -481,6 +488,15 @@ export default function TodayPage() {
           </section>
         );
       })()}
+
+      {/* Stars (children) */}
+      {isChild && (
+        <section className="section">
+          <Link href="/stars" className="group" style={{ display: "block" }}>
+            <StarCard stats={stars.stats[me.id]} next={stars.nextReward(me.id)} />
+          </Link>
+        </section>
+      )}
 
       {/* 2. Up next */}
       {calendar.status && (

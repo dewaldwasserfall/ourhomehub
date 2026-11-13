@@ -268,3 +268,17 @@ export const WalletIcon = (p: IconProps) => (
     <path d="M3.5 9.5h17M15.5 14h2" />
   </Svg>
 );
+
+/** Stars (kids' rewards) */
+export const StarIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 3.6l2.5 5.2 5.7.8-4.1 4 1 5.6L12 16.5l-5.1 2.7 1-5.6-4.1-4 5.7-.8z" />
+  </Svg>
+);
+
+/** Streak */
+export const FlameIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 21c-3.6 0-6-2.4-6-5.6 0-3.3 2.6-5.1 3.6-8.4.9 1.6 1.4 2.7 1.4 4 1.3-.9 2.2-2.6 2.3-4.5 2.7 2.4 4.7 5.4 4.7 8.9 0 3.2-2.4 5.6-6 5.6z" />
+  </Svg>
+);

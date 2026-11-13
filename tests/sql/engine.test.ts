@@ -145,6 +145,7 @@ beforeAll(async () => {
     "20261113001000_bin_days.sql",
     "20261113001100_bins_morning.sql",
     "20261113001200_grocery_budget.sql",
+    "20261113001300_stars_rewards.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -1012,5 +1013,45 @@ describe("grocery budget", () => {
     await actAs("kid");
     expect(await all(`select id from public.bunq_payments`)).toHaveLength(0);
     await expect(db.query(`select public.bunq_get_credentials($1)`, [householdId])).rejects.toThrow(/permission denied/);
+  });
+});
+
+describe("stars and rewards", () => {
+  it("counts a child's own ticks, spends stars on given rewards and keeps a streak", async () => {
+    await actAsAdmin();
+    const kid = (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS.kid.id])).id;
+    // Earlier tests left the kid with: one routine step ticked (16 Nov), a
+    // ticked to-do of their own, and a chore that was deleted (ticks gone).
+    await actAs("kid");
+    const before = await one<{ earned: number; spent: number; balance: number }>(
+      `select earned, spent, balance from public.member_stars($1, '2026-11-16')`,
+      [kid],
+    );
+    expect(before.earned).toBe(2);
+
+    // A reward, set and given by an adult, spends its stars.
+    await expect(
+      db.query(`insert into public.rewards (household_id, member_id, title, stars_needed) values ($1, $2, 'Mine', 1)`, [householdId, kid]),
+    ).rejects.toThrow();
+    await actAs("dewald");
+    await db.query(`insert into public.rewards (household_id, member_id, title, stars_needed) values ($1, $2, 'Choose dinner', 2)`, [householdId, kid]);
+    await db.query(`update public.rewards set given_at = now() where member_id = $1`, [kid]);
+    const after = await one<{ spent: number; balance: number }>(`select spent, balance from public.member_stars($1, '2026-11-16')`, [kid]);
+    expect(after).toEqual({ spent: 2, balance: 0 });
+
+    // Streak: the kid's own routine has one every-day step, done on 16 Nov only.
+    const streak = await one<{ streak: number }>(`select streak from public.member_stars($1, '2026-11-16')`, [kid]);
+    expect(streak.streak).toBe(1);
+    // On the 17th (not done yet) today doesn't break it.
+    expect((await one<{ streak: number }>(`select streak from public.member_stars($1, '2026-11-17')`, [kid])).streak).toBe(1);
+    // By the 18th the missed 17th has ended it.
+    expect((await one<{ streak: number }>(`select streak from public.member_stars($1, '2026-11-18')`, [kid])).streak).toBe(0);
+  });
+
+  it("only lets children see their own stars", async () => {
+    await actAsAdmin();
+    const dewald = (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS.dewald.id])).id;
+    await actAs("kid");
+    await expect(db.query(`select * from public.member_stars($1, '2026-11-16')`, [dewald])).rejects.toThrow(/not_assigned_to_you/);
   });
 });
