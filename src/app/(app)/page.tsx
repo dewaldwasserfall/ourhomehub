@@ -435,29 +435,41 @@ export default function TodayPage() {
         </div>
       </section>
 
-      {/* Bins: collected today, or going out tonight for tomorrow */}
+      {/* Bins. Many households put them out in the morning, so collection day
+          gets the same weight as the evening before:
+            morning of collection   "Plastic goes out this morning"
+            later that day          "Plastic collected today" (quieter)
+            evening before          "GFT goes out tonight" */}
       {(() => {
         const bins = binsAround(plan.binDays, today);
         if (!bins.today.length && !bins.tomorrow.length) return null;
+        const dots = (kinds: typeof bins.today) => (
+          <span className="bin-dots" aria-hidden="true">
+            {kinds.map((k) => <span key={k} className="bin-dot" style={{ background: binColour(k) }} />)}
+          </span>
+        );
+        const morning = hour < 12;
         return (
           <section className="section">
             <Link href="/household/bins" className="group bin-banner">
+              {bins.today.length > 0 && (
+                <span className={morning ? "bin-banner__line" : "bin-banner__line bin-banner__line--muted"}>
+                  {dots(bins.today)}
+                  {morning ? (
+                    <span>
+                      <strong>{binList(bins.today)}</strong> goes out this morning
+                    </span>
+                  ) : (
+                    <span>{binList(bins.today)} collected today</span>
+                  )}
+                </span>
+              )}
               {bins.tomorrow.length > 0 && (
                 <span className="bin-banner__line">
-                  <span className="bin-dots" aria-hidden="true">
-                    {bins.tomorrow.map((k) => <span key={k} className="bin-dot" style={{ background: binColour(k) }} />)}
-                  </span>
+                  {dots(bins.tomorrow)}
                   <span>
                     <strong>{binList(bins.tomorrow)}</strong> goes out tonight
                   </span>
-                </span>
-              )}
-              {bins.today.length > 0 && (
-                <span className="bin-banner__line bin-banner__line--muted">
-                  <span className="bin-dots" aria-hidden="true">
-                    {bins.today.map((k) => <span key={k} className="bin-dot" style={{ background: binColour(k) }} />)}
-                  </span>
-                  <span>{binList(bins.today)} collection today</span>
                 </span>
               )}
             </Link>

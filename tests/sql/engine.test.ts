@@ -143,6 +143,7 @@ beforeAll(async () => {
     "20261113000800_member_themes.sql",
     "20261113000900_notifications.sql",
     "20261113001000_bin_days.sql",
+    "20261113001100_bins_morning.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {

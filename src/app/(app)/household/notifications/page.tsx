@@ -205,12 +205,21 @@ export default function NotificationsPage() {
 
         <div className="group" style={{ marginTop: 12 }}>
           <SwitchRow
-            label="Bins"
-            hint="The evening before a collection"
+            label="Bins, the evening before"
+            hint="What goes out tonight"
             checked={prefs.bins}
             onChange={(v) => set("bins", v)}
           />
           {prefs.bins && <TimeRow label="At" value={prefs.bins_time} onChange={(v) => set("bins_time", v)} />}
+          <SwitchRow
+            label="Bins, on the morning"
+            hint="What goes out today"
+            checked={prefs.bins_morning}
+            onChange={(v) => set("bins_morning", v)}
+          />
+          {prefs.bins_morning && (
+            <TimeRow label="At" value={prefs.bins_morning_time} onChange={(v) => set("bins_morning_time", v)} />
+          )}
         </div>
 
         {meIsAdult && (

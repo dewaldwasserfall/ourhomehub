@@ -30,8 +30,12 @@ export interface Prefs {
   routine_nudge: boolean;
   routine_nudge_time: string;
   list_added: boolean;
+  /** Evening before collection. */
   bins: boolean;
   bins_time: string;
+  /** Morning of collection. */
+  bins_morning: boolean;
+  bins_morning_time: string;
 }
 
 /**
@@ -50,6 +54,8 @@ export function defaultPrefs(role: Member["role"]): Prefs {
     list_added: false,
     bins: !child,
     bins_time: "19:00",
+    bins_morning: !child,
+    bins_morning_time: "07:00",
   };
 }
 
@@ -184,7 +190,7 @@ export function routineNudges(
 }
 
 // -----------------------------------------------------------------------------
-// Step 4b: bins, the evening before collection
+// Step 4b: bins, the evening before and the morning of collection
 // -----------------------------------------------------------------------------
 
 export function binReminder(days: BinDay[], today: string): Notice | null {
@@ -194,6 +200,17 @@ export function binReminder(days: BinDay[], today: string): Notice | null {
     key: `bins:${today}`,
     title: `Bins tonight: ${binList(tomorrow)}`,
     body: "Collected tomorrow morning",
+    url: "/household/bins",
+  };
+}
+
+export function binMorningReminder(days: BinDay[], today: string): Notice | null {
+  const kinds = binsAround(days, today).today;
+  if (kinds.length === 0) return null;
+  return {
+    key: `bins-morning:${today}`,
+    title: `Bins out this morning: ${binList(kinds)}`,
+    body: "Collected today",
     url: "/household/bins",
   };
 }

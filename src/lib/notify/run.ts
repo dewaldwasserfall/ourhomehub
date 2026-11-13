@@ -18,6 +18,7 @@ import type { CalendarEventRow } from "../calendar/types";
 import { getSupabaseAdminClient } from "../supabase/admin";
 import type { Chore, Completion, DayMode, Member, Routine, RoutineStep } from "../types";
 import {
+  binMorningReminder,
   binReminder,
   defaultPrefs,
   digest,
@@ -161,7 +162,9 @@ export async function runNotifications(now = new Date()) {
       const needDigest = wants((p) => p.digest && isTimeFor(nowMinutes, p.digest_time));
       const needNudge = wants((p) => p.routine_nudge && isTimeFor(nowMinutes, p.routine_nudge_time));
       const needLists = wants((p) => p.list_added);
-      const needBins = wants((p) => p.bins && isTimeFor(nowMinutes, p.bins_time));
+      const needBins = wants(
+        (p) => (p.bins && isTimeFor(nowMinutes, p.bins_time)) || (p.bins_morning && isTimeFor(nowMinutes, p.bins_morning_time)),
+      );
 
       let binDays: BinDay[] = [];
       if (needBins) {
@@ -241,6 +244,10 @@ export async function runNotifications(now = new Date()) {
         }
         if (prefs.bins && isTimeFor(nowMinutes, prefs.bins_time)) {
           const b = binReminder(binDays, today);
+          if (b) notices.push(b);
+        }
+        if (prefs.bins_morning && isTimeFor(nowMinutes, prefs.bins_morning_time)) {
+          const b = binMorningReminder(binDays, today);
           if (b) notices.push(b);
         }
         if (prefs.routine_nudge && isTimeFor(nowMinutes, prefs.routine_nudge_time)) {
