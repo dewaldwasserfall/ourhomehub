@@ -22,6 +22,7 @@
     14. Utilities and reduced motion
     15. Calendar
     16. Today, routines, zones, chores and holidays (Phase 3)
+    17. Desktop layout (sidebar, columns, dialogs)
    ============================================================================= */
 
 
@@ -1704,5 +1705,283 @@ textarea.input {
   }
   .kind-badge--public_holiday {
     color: #ff6482;
+  }
+}
+
+
+/* -----------------------------------------------------------------------------
+   17. Desktop layout (sidebar, columns, dialogs)
+   -----------------------------------------------------------------------------
+   Phones and tablets keep the single column and bottom tab bar. From 1024px:
+     * a sidebar replaces the tab bar
+     * Today becomes three columns, Calendar shows month + day side by side,
+       an open list sits beside the column of lists
+     * sheets become centred dialogs
+   The breakpoint matches DESKTOP_QUERY in src/lib/use-is-desktop.ts.
+   -------------------------------------------------------------------------- */
+
+/* Phones: hidden; the column wrappers just keep the usual spacing. */
+.sidebar {
+  display: none;
+}
+
+.today-col + .today-col > .section:first-of-type,
+.calendar-split > .section:first-of-type {
+  margin-top: 26px;
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --sidebar-w: 248px;
+    --split-nav-w: 300px;
+    --desktop-gutter: 36px;
+    /* No tab bar, so nothing to leave room for at the bottom. */
+    --tabbar-h: 0px;
+  }
+
+  .tabbar {
+    display: none;
+  }
+
+  .desktop-hide {
+    display: none !important;
+  }
+
+  /* 17a. Sidebar */
+  .sidebar {
+    position: fixed;
+    z-index: 40;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: var(--sidebar-w);
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    padding: 22px 14px 18px;
+    background: var(--chrome);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+    border-right: 0.5px solid var(--separator);
+    overflow-y: auto;
+  }
+
+  .sidebar__brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 8px;
+  }
+
+  .sidebar__mark {
+    flex: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    display: grid;
+    place-items: center;
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+
+  .sidebar__household {
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sidebar__group {
+    display: grid;
+    gap: 2px;
+  }
+
+  .sidebar__heading {
+    padding: 0 10px 6px;
+    color: var(--ink-2);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .sidebar__link {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    min-height: 38px;
+    padding: 0 10px;
+    border-radius: 9px;
+    color: var(--ink);
+    font-size: 15px;
+    font-weight: 500;
+  }
+
+  .sidebar__link svg {
+    color: var(--ink-2);
+  }
+
+  .sidebar__link:hover {
+    background: var(--fill);
+  }
+
+  .sidebar__link[aria-current="page"] {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  .sidebar__link[aria-current="page"] svg {
+    color: var(--accent);
+  }
+
+  .sidebar__me {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    border-radius: 12px;
+  }
+
+  .sidebar__me:hover {
+    background: var(--fill);
+  }
+
+  .sidebar__me-text {
+    min-width: 0;
+    display: grid;
+  }
+
+  .sidebar__me-name {
+    font-size: 15px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sidebar__me-role {
+    color: var(--ink-2);
+    font-size: 13px;
+  }
+
+  /* 17b. The page area beside the sidebar */
+  .app-main {
+    margin-left: var(--sidebar-w);
+  }
+
+  .screen {
+    max-width: 760px;
+    padding: 0 var(--desktop-gutter) 56px;
+  }
+
+  .screen--wide {
+    max-width: 1280px;
+  }
+
+  .navbar {
+    margin: 0 calc(var(--desktop-gutter) * -1);
+    padding: 16px var(--desktop-gutter) 10px;
+  }
+
+  .large-title {
+    margin-top: 8px;
+  }
+
+  /* Hover states that touch screens get from :active */
+  .row--link:hover,
+  .row--pressable:hover {
+    background: var(--fill);
+  }
+
+  /* 17c. Today: three columns */
+  .today-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr);
+    gap: 0 28px;
+    align-items: start;
+  }
+
+  .today-col + .today-col > .section:first-of-type {
+    margin-top: 8px;
+  }
+
+  /* 17d. Calendar: month grid with the chosen day beside it */
+  .calendar-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    gap: 0 28px;
+    align-items: start;
+  }
+
+  .calendar-split > .section,
+  .calendar-split > .section:first-of-type {
+    margin-top: 26px;
+  }
+
+  .calendar-split > .section:last-child {
+    position: sticky;
+    top: 80px;
+  }
+
+  /* 17e. Lists: the open list beside the column of lists */
+  .split {
+    display: grid;
+    grid-template-columns: var(--split-nav-w) minmax(0, 1fr);
+    min-height: 100dvh;
+  }
+
+  .split__nav {
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    overflow-y: auto;
+    padding: 26px 16px;
+    border-right: 0.5px solid var(--separator);
+  }
+
+  .split__nav-title {
+    padding: 0 8px 12px;
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .split__nav-row {
+    --separator-inset: 58px;
+    min-height: 48px;
+  }
+
+  .split__nav-row[aria-current="page"] {
+    background: var(--accent-soft);
+  }
+
+  .split__nav-row[aria-current="page"] .row__title {
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  /* The composer floats over the open list's column, not the whole window. */
+  .composer {
+    left: var(--sidebar-w);
+    bottom: 24px;
+  }
+
+  .split .composer {
+    left: calc(var(--sidebar-w) + var(--split-nav-w));
+  }
+
+  /* 17f. Sheets become centred dialogs */
+  .sheet {
+    top: 8vh;
+    bottom: auto;
+    left: var(--sidebar-w);
+    max-width: 560px;
+    max-height: 84vh;
+    padding: 12px 24px 24px;
+    border-radius: var(--radius-sheet);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28), 0 0 0 0.5px var(--separator);
   }
 }

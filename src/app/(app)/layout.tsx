@@ -2,10 +2,12 @@
  * Shell for every signed-in screen.
  *
  * Gatekeeper: signed out -> /login, signed in without a household ->
- * /onboarding. Everyone else gets the household context and the tab bar.
+ * /onboarding. Everyone else gets the household context, plus the tab bar
+ * (phones and tablets) or the sidebar (desktop); CSS shows one or the other.
  */
 import { redirect } from "next/navigation";
 import { HouseholdProvider } from "@/components/household-context";
+import { Sidebar } from "@/components/sidebar";
 import { TabBar } from "@/components/tab-bar";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { HOUSEHOLD_COLUMNS, type Household, type Member } from "@/lib/types";
@@ -36,7 +38,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <HouseholdProvider me={me} household={household} members={(members as Member[]) ?? [me]}>
-      {children}
+      <Sidebar />
+      <div className="app-main">{children}</div>
       <TabBar />
     </HouseholdProvider>
   );

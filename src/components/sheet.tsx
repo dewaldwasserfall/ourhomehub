@@ -1,11 +1,15 @@
 /**
  * Bottom sheet, iOS style: slides up with a spring, dims the page, closes on
  * backdrop tap, Escape, or a downward drag on the grabber.
+ *
+ * On desktop the same sheet is a centred dialog: it fades and settles into
+ * place instead of sliding up, and there is no grabber to drag.
  */
 "use client";
 
 import { AnimatePresence, motion, useDragControls } from "framer-motion";
 import { useEffect, useRef, type ReactNode } from "react";
+import { useIsDesktop } from "@/lib/use-is-desktop";
 
 interface SheetProps {
   open: boolean;
@@ -21,6 +25,7 @@ interface SheetProps {
 export function Sheet({ open, onClose, title, leading, trailing, children }: SheetProps) {
   const dragControls = useDragControls();
   const panelRef = useRef<HTMLDivElement>(null);
+  const isDesktop = useIsDesktop();
 
   // Step 1: Escape closes; focus moves into the sheet when it opens.
   useEffect(() => {
@@ -54,12 +59,13 @@ export function Sheet({ open, onClose, title, leading, trailing, children }: She
             aria-modal="true"
             aria-label={title}
             tabIndex={-1}
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{ type: "spring", stiffness: 420, damping: 40 }}
-            // Step 2: drag down from the grabber to dismiss.
-            drag="y"
+            // Step 2: phones slide up from the bottom; desktop settles in place.
+            initial={isDesktop ? { opacity: 0, y: 16, scale: 0.98 } : { y: "100%" }}
+            animate={isDesktop ? { opacity: 1, y: 0, scale: 1 } : { y: 0 }}
+            exit={isDesktop ? { opacity: 0, y: 12, scale: 0.98 } : { y: "100%" }}
+            transition={isDesktop ? { duration: 0.2, ease: [0.22, 1, 0.36, 1] } : { type: "spring", stiffness: 420, damping: 40 }}
+            // Step 3: drag down from the grabber to dismiss (phones only).
+            drag={isDesktop ? false : "y"}
             dragListener={false}
             dragControls={dragControls}
             dragConstraints={{ top: 0, bottom: 0 }}
@@ -68,12 +74,14 @@ export function Sheet({ open, onClose, title, leading, trailing, children }: She
               if (info.offset.y > 120 || info.velocity.y > 600) onClose();
             }}
           >
-            <div
-              style={{ padding: "6px 0 2px", touchAction: "none", cursor: "grab" }}
-              onPointerDown={(e) => dragControls.start(e)}
-            >
-              <div className="sheet__grabber" />
-            </div>
+            {!isDesktop && (
+              <div
+                style={{ padding: "6px 0 2px", touchAction: "none", cursor: "grab" }}
+                onPointerDown={(e) => dragControls.start(e)}
+              >
+                <div className="sheet__grabber" />
+              </div>
+            )}
             <div className="sheet__bar">
               <div>{leading}</div>
               <div className="sheet__title">{title}</div>

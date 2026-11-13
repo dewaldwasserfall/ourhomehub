@@ -405,7 +405,7 @@ export default function TodayPage() {
   );
 
   return (
-    <main className="screen">
+    <main className="screen screen--wide">
       <Navbar
         title="Today"
         subtitle={greeting(hour, me.display_name)}
@@ -423,6 +423,9 @@ export default function TodayPage() {
         }
       />
 
+      {/* Desktop: three columns. Phones: one column, in this same order. */}
+      <div className="today-grid">
+      <div className="today-col">
       {/* 1. The day */}
       <section className="section">
         <div className="day-banner">
@@ -463,6 +466,9 @@ export default function TodayPage() {
         </section>
       )}
 
+      </div>
+
+      <div className="today-col">
       {loading && (
         <section className="section">
           <div className="group" aria-busy="true" aria-label="Loading today">
@@ -532,6 +538,18 @@ export default function TodayPage() {
         </section>
       )}
 
+      {/* Nothing to do */}
+      {nothingToDo && (
+        <section className="section">
+          <div className="group empty">
+            <span className="empty__title">Nothing left to do today</span>
+            {meIsAdult ? "Add routines, chores and zones on the Household tab." : "Enjoy your day."}
+          </div>
+        </section>
+      )}
+      </div>
+
+      <div className="today-col">
       {/* 5. This fortnight's zone */}
       {zone && zone.mine.length > 0 && (
         <section className="section">
@@ -558,16 +576,6 @@ export default function TodayPage() {
         </section>
       )}
 
-      {/* Nothing to do */}
-      {nothingToDo && (
-        <section className="section">
-          <div className="group empty">
-            <span className="empty__title">Nothing left to do today</span>
-            {meIsAdult ? "Add routines, chores and zones on the Household tab." : "Enjoy your day."}
-          </div>
-        </section>
-      )}
-
       {/* 6. Groceries */}
       {groceries && (
         <section className="section">
@@ -591,6 +599,8 @@ export default function TodayPage() {
           </div>
         </section>
       )}
+      </div>
+      </div>
       {toast.node}
     </main>
   );

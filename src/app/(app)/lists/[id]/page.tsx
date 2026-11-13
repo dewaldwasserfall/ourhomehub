@@ -226,7 +226,7 @@ export default function ListPage() {
   // Step 3: render.
   // ---------------------------------------------------------------------------
   const back = (
-    <Link href="/lists" className="nav-button" aria-label="Back to Lists">
+    <Link href="/lists" className="nav-button desktop-hide" aria-label="Back to Lists">
       <ChevronLeftIcon size={22} />
       Lists
     </Link>

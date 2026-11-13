@@ -17,57 +17,38 @@ import { Sheet } from "@/components/sheet";
 import { friendlyError } from "@/lib/errors";
 import { describeDue, MIN_CONFIDENCE } from "@/lib/rhythm";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import type { ItemPattern, List, ListType } from "@/lib/types";
-
-interface ListSummary extends List {
-  open: number;
-  suggested: number;
-}
+import type { ItemPattern, ListType } from "@/lib/types";
+import { useListSummaries } from "@/lib/use-list-summaries";
 
 type UpcomingItem = ItemPattern & { item: { display_name: string } };
 
 export default function ListsPage() {
   const supabase = getSupabaseBrowserClient();
   const { household, meIsAdult } = useHousehold();
-  const [lists, setLists] = useState<ListSummary[] | null>(null);
+  const { lists, reload: reloadLists } = useListSummaries({ refreshSuggestions: true });
   const [upcoming, setUpcoming] = useState<UpcomingItem[]>([]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState<ListType>("shopping");
   const [error, setError] = useState<string | null>(null);
 
-  // Step 1: load lists with counts, plus the next few predicted items.
-  const load = useCallback(async () => {
-    await supabase.rpc("refresh_suggestions");
-    const [listsRes, openRes, upcomingRes] = await Promise.all([
-      supabase.from("lists").select("*").order("sort_order").order("created_at"),
-      supabase.from("list_entries").select("list_id, source").eq("status", "open"),
-      supabase
-        .from("item_patterns")
-        .select("*, item:items(display_name)")
-        .not("next_expected_at", "is", null)
-        .gte("confidence", MIN_CONFIDENCE)
-        .gt("next_expected_at", new Date().toISOString())
-        .order("next_expected_at")
-        .limit(3),
-    ]);
-    const openLines = (openRes.data ?? []) as Array<{ list_id: string; source: string }>;
-    setLists(
-      ((listsRes.data ?? []) as List[]).map((l) => ({
-        ...l,
-        open: openLines.filter((o) => o.list_id === l.id).length,
-        suggested: openLines.filter((o) => o.list_id === l.id && o.source === "suggested").length,
-      })),
-    );
-    setUpcoming((upcomingRes.data ?? []) as UpcomingItem[]);
+  // Step 1: the next few items the engine expects (the lists themselves and
+  //         their counts come from useListSummaries, which stays live).
+  const loadUpcoming = useCallback(async () => {
+    const { data } = await supabase
+      .from("item_patterns")
+      .select("*, item:items(display_name)")
+      .not("next_expected_at", "is", null)
+      .gte("confidence", MIN_CONFIDENCE)
+      .gt("next_expected_at", new Date().toISOString())
+      .order("next_expected_at")
+      .limit(3);
+    setUpcoming((data ?? []) as UpcomingItem[]);
   }, [supabase]);
 
   useEffect(() => {
-    load();
-    const onVisible = () => document.visibilityState === "visible" && load();
-    document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [load]);
+    loadUpcoming();
+  }, [loadUpcoming, lists]);
 
   // Step 2: create a list.
   async function createList() {
@@ -87,7 +68,7 @@ export default function ListsPage() {
     setNewName("");
     setNewType("shopping");
     setError(null);
-    load();
+    reloadLists();
   }
 
   return (

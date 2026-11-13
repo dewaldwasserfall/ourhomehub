@@ -10,7 +10,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Avatar } from "@/components/avatar";
 import { EventSheet } from "@/components/event-sheet";
 import { useHousehold } from "@/components/household-context";
@@ -22,6 +22,7 @@ import { expandForRange, groupByDay } from "@/lib/calendar/expand";
 import { addDays, dateKey, timeKey } from "@/lib/calendar/time";
 import type { EventInput, Occurrence } from "@/lib/calendar/types";
 import { useCalendar } from "@/lib/calendar/use-calendar";
+import { DESKTOP_QUERY } from "@/lib/use-is-desktop";
 
 type View = "agenda" | "month";
 type SheetTarget = { kind: "new"; day: string } | { kind: "existing"; occurrence: Occurrence } | null;
@@ -47,6 +48,11 @@ export default function CalendarPage() {
   const [month, setMonth] = useState(today.slice(0, 7)); // "YYYY-MM"
   const [selectedDay, setSelectedDay] = useState(today);
   const [sheet, setSheet] = useState<SheetTarget>(null);
+
+  // Desktop has room for the month grid with the day beside it, so start there.
+  useEffect(() => {
+    if (window.matchMedia(DESKTOP_QUERY).matches) setView("month");
+  }, []);
 
   const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
   const connected = Boolean(status);
@@ -165,7 +171,7 @@ export default function CalendarPage() {
   // Step 4: screens.
   // ---------------------------------------------------------------------------
   return (
-    <main className="screen">
+    <main className="screen screen--wide">
       <Navbar
         title="Calendar"
         trailing={navTrailing}
@@ -255,7 +261,7 @@ export default function CalendarPage() {
           )}
 
           {view === "month" && (
-            <>
+            <div className="calendar-split">
               <section className="section">
                 <div className="month">
                   <div className="month__bar">
@@ -346,7 +352,7 @@ export default function CalendarPage() {
                   })()}
                 </div>
               </section>
-            </>
+            </div>
           )}
         </>
       )}
