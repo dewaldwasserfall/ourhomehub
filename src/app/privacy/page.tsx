@@ -5,7 +5,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-export const metadata: Metadata = { title: "Privacy – Household Hub" };
+export const metadata: Metadata = { title: "Privacy – HomeHub" };
 
 export default function PrivacyPage() {
   return (
@@ -13,7 +13,7 @@ export default function PrivacyPage() {
       <h1 className="welcome__title" style={{ fontSize: 34 }}>Privacy</h1>
       <div style={{ color: "var(--ink-2)", fontSize: 16, lineHeight: 1.55, display: "grid", gap: 16 }}>
         <p style={{ margin: 0 }}>
-          Household Hub is a private app for one family. Only Google accounts the household has invited can sign in.
+          HomeHub is a private app for one family. Only Google accounts the household has invited can sign in.
         </p>
         <p style={{ margin: 0 }}>
           <strong style={{ color: "var(--ink)" }}>What we store.</strong> Your name, email address and profile photo

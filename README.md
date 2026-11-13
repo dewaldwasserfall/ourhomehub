@@ -1,4 +1,4 @@
-# Household Hub
+# HomeHub
 
 Shared household lists that learn what you buy and when. Version 1 covers:
 
@@ -52,7 +52,7 @@ You'll need a Supabase account, a Google Cloud account and (to host it) a Vercel
 
 ### 2. Set up Google sign-in
 
-1. In [Google Cloud Console](https://console.cloud.google.com/), create a project (e.g. "Household Hub").
+1. In [Google Cloud Console](https://console.cloud.google.com/), create a project (e.g. "HomeHub").
 2. **APIs & Services > OAuth consent screen**: choose *External*, fill in the app name and your email, and add the scopes `email`, `profile` and `openid`.
 3. **Publish the app** (set the status to *In production*). In *Testing* mode Google sign-ins expire after 7 days. You'll see an "unverified app" warning when signing in; that's expected for a private app and you can continue past it.
 4. **Credentials > Create credentials > OAuth client ID**, type *Web application*.

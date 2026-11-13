@@ -22,7 +22,7 @@ const OUTCOMES: Record<string, { text: string; error?: boolean }> = {
   owner_only: { text: "Only the household owner can connect the calendar.", error: true },
   no_refresh_token: { text: "Google didn't grant lasting access. Try connecting again.", error: true },
   missing_permission: {
-    text: "Tick the box that lets Household Hub see and edit calendar events, then try again.",
+    text: "Tick the box that lets HomeHub see and edit calendar events, then try again.",
     error: true,
   },
 };

@@ -6,8 +6,8 @@ import type { MetadataRoute } from "next";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Household Hub",
-    short_name: "Hub",
+    name: "HomeHub",
+    short_name: "HomeHub",
     description: "Shared lists that learn what your household buys and when.",
     start_url: "/",
     display: "standalone",

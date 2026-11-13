@@ -40,10 +40,10 @@ export default function HouseholdPage() {
 
   // Step 2: share the invite code (native share sheet, else copy).
   async function shareCode() {
-    const text = `Join our household in Household Hub with code ${household.invite_code}: ${window.location.origin}`;
+    const text = `Join our household in HomeHub with code ${household.invite_code}: ${window.location.origin}`;
     try {
       if (navigator.share) {
-        await navigator.share({ title: "Household Hub invite", text });
+        await navigator.share({ title: "HomeHub invite", text });
         return;
       }
       await navigator.clipboard.writeText(household.invite_code);

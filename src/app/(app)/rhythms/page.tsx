@@ -3,7 +3,7 @@
  *
  * "Coming up" shows items with a known rhythm, ordered by when they're due,
  * each with a bar showing how far through its usual gap you are. The notch
- * on the bar is where Hub will add it to the list.
+ * on the bar is where HomeHub will add it to the list.
  * "Still learning" shows items that need more history first.
  */
 "use client";
@@ -69,7 +69,7 @@ export default function RhythmsPage() {
         <div className="explainer">
           <GlowSparkle size={22} id="spark-explainer" />
           <span>
-            <strong>Hub learns as you shop.</strong> After three shops it knows how often you buy each thing, and
+            <strong>HomeHub learns as you shop.</strong> After three shops it knows how often you buy each thing, and
             adds it to Groceries just before you usually run out.
           </span>
         </div>
@@ -137,7 +137,7 @@ export default function RhythmsPage() {
             })}
           </div>
           <p className="section__footer">
-            The gap in each bar marks when Hub adds the item. Saying &ldquo;Not now&rdquo; moves it later; buying it
+            The gap in each bar marks when HomeHub adds the item. Saying &ldquo;Not now&rdquo; moves it later; buying it
             before then moves it earlier.
           </p>
         </section>
@@ -157,7 +157,7 @@ export default function RhythmsPage() {
                   <span className="row__title">{pattern.item.display_name}</span>
                   <span className="row__subtitle">
                     {state.kind === "irregular"
-                      ? "Bought at uneven gaps so far, so Hub won't guess yet."
+                      ? "Bought at uneven gaps so far, so HomeHub won't guess yet."
                       : `Bought ${pattern.purchase_count === 1 ? "once" : `${pattern.purchase_count} times`}. Learns after 3 shops.`}
                   </span>
                 </div>

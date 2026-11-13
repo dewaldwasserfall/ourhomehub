@@ -2,7 +2,7 @@
   "name": "household-hub",
   "version": "0.1.0",
   "private": true,
-  "description": "Household Hub: shared lists that learn what you buy and when.",
+  "description": "HomeHub: shared lists that learn what you buy and when.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

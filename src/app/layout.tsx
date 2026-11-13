@@ -7,11 +7,11 @@ import "@fontsource-variable/inter";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Household Hub",
+  title: "HomeHub",
   description: "Shared lists that learn what your household buys and when.",
-  applicationName: "Household Hub",
+  applicationName: "HomeHub",
   // Full-screen launch from the iOS home screen.
-  appleWebApp: { capable: true, title: "Hub", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "HomeHub", statusBarStyle: "default" },
   icons: {
     icon: [{ url: "/icons/icon.svg", type: "image/svg+xml" }],
     apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],

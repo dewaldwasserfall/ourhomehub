@@ -229,7 +229,7 @@ export default function ListsPage() {
             />
             <p className="section__footer">
               {newType === "shopping"
-                ? "Sorted by aisle. Everything you tick off teaches Hub your rhythms."
+                ? "Sorted by aisle. Everything you tick off teaches HomeHub your rhythms."
                 : "A simple checklist. Nothing is learned from it."}
             </p>
           </div>

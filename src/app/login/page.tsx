@@ -40,7 +40,7 @@ export default async function LoginPage({
         height={72}
         priority
       />
-      <h1 className="welcome__title">Household Hub</h1>
+      <h1 className="welcome__title">HomeHub</h1>
       <p className="welcome__lede">One shared list for the two of you, with a memory for what runs out.</p>
 
       <ul className="welcome__features">
