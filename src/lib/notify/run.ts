@@ -11,12 +11,14 @@
  *      (HTTP 404/410) are removed
  */
 import webpush from "web-push";
+import type { BinDay } from "../bins";
 import { expandForRange } from "../calendar/expand";
 import { addDays, dateKey, wallTimeOf } from "../calendar/time";
 import type { CalendarEventRow } from "../calendar/types";
 import { getSupabaseAdminClient } from "../supabase/admin";
 import type { Chore, Completion, DayMode, Member, Routine, RoutineStep } from "../types";
 import {
+  binReminder,
   defaultPrefs,
   digest,
   dueEvents,
@@ -135,7 +137,7 @@ export async function runNotifications(now = new Date()) {
   ]);
   const members = (memberRows ?? []) as MemberRow[];
   const prefsByMember = new Map(((prefRows ?? []) as Array<Prefs & { member_id: string }>).map((p) => [p.member_id, p]));
-  const prefsOf = (m: MemberRow): Prefs => prefsByMember.get(m.id) ?? defaultPrefs(m.role);
+  const prefsOf = (m: MemberRow): Prefs => ({ ...defaultPrefs(m.role), ...prefsByMember.get(m.id) });
 
   let sent = 0;
   const householdIds = [...new Set(members.map((m) => m.household_id))];
@@ -159,6 +161,13 @@ export async function runNotifications(now = new Date()) {
       const needDigest = wants((p) => p.digest && isTimeFor(nowMinutes, p.digest_time));
       const needNudge = wants((p) => p.routine_nudge && isTimeFor(nowMinutes, p.routine_nudge_time));
       const needLists = wants((p) => p.list_added);
+      const needBins = wants((p) => p.bins && isTimeFor(nowMinutes, p.bins_time));
+
+      let binDays: BinDay[] = [];
+      if (needBins) {
+        const { data } = await admin.from("bin_days").select("*").eq("household_id", householdId).gte("date", today).lte("date", addDays(today, 1));
+        binDays = (data ?? []) as BinDay[];
+      }
 
       const occurrences = needEvents ? expandForRange(await loadCalendarRows(householdId), today, addDays(today, 1), tz) : [];
 
@@ -229,6 +238,10 @@ export async function runNotifications(now = new Date()) {
         if (prefs.digest && isTimeFor(nowMinutes, prefs.digest_time)) {
           const d = digest(member, todos, chores, today, mode);
           if (d) notices.push(d);
+        }
+        if (prefs.bins && isTimeFor(nowMinutes, prefs.bins_time)) {
+          const b = binReminder(binDays, today);
+          if (b) notices.push(b);
         }
         if (prefs.routine_nudge && isTimeFor(nowMinutes, prefs.routine_nudge_time)) {
           notices.push(...routineNudges(member, routines, steps, completions, today, mode));

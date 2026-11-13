@@ -142,6 +142,7 @@ beforeAll(async () => {
     "20261113000700_today_routines_roles.sql",
     "20261113000800_member_themes.sql",
     "20261113000900_notifications.sql",
+    "20261113001000_bin_days.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -957,5 +958,21 @@ describe("notifications", () => {
     expect(await all(`select * from public.notification_log`)).toHaveLength(0);
     await actAsServer();
     expect((await one<{ ok: boolean }>(`select public.notify_check_secret('guess') as ok`)).ok).toBe(false);
+  });
+});
+
+describe("bin days", () => {
+  it("lets adults add dates once per bin and date; children only read", async () => {
+    await actAs("partner");
+    await db.query(`insert into public.bin_days (household_id, kind, date) values ($1, 'plastic', '2026-11-16'), ($1, 'gft', '2026-11-26')`, [householdId]);
+    await expect(db.query(`insert into public.bin_days (household_id, kind, date) values ($1, 'plastic', '2026-11-16')`, [householdId])).rejects.toThrow();
+    await expect(db.query(`insert into public.bin_days (household_id, kind, date) values ($1, 'compost', '2026-11-17')`, [householdId])).rejects.toThrow();
+
+    await actAs("kid");
+    expect(await all(`select id from public.bin_days`)).toHaveLength(2);
+    await expect(db.query(`insert into public.bin_days (household_id, kind, date) values ($1, 'paper', '2026-11-27')`, [householdId])).rejects.toThrow();
+
+    await actAs("stranger");
+    expect(await all(`select id from public.bin_days`)).toHaveLength(0);
   });
 });

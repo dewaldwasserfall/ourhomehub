@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSupabaseBrowserClient } from "./supabase/client";
+import type { BinDay } from "./bins";
 import type { Chore, Completion, DayOverride, Routine, RoutineStep, Zone, ZoneTask } from "./types";
 
 export interface PlanData {
@@ -21,12 +22,14 @@ export interface PlanData {
   overrides: DayOverride[];
   /** Ticks from `completionsFrom` onwards (enough for today and this fortnight). */
   completions: Completion[];
+  /** Bin collection days from `completionsFrom` onwards. */
+  binDays: BinDay[];
 }
 
-const EMPTY: PlanData = { routines: [], steps: [], zones: [], zoneTasks: [], chores: [], overrides: [], completions: [] };
+const EMPTY: PlanData = { routines: [], steps: [], zones: [], zoneTasks: [], chores: [], overrides: [], completions: [], binDays: [] };
 
 /** Tables whose changes should refresh the screen. */
-const LIVE_TABLES = ["routines", "routine_steps", "zones", "zone_tasks", "chores", "completions", "day_overrides"];
+const LIVE_TABLES = ["routines", "routine_steps", "zones", "zone_tasks", "chores", "completions", "day_overrides", "bin_days"];
 
 export function usePlanData(householdId: string, completionsFrom: string) {
   const supabase = getSupabaseBrowserClient();
@@ -36,7 +39,7 @@ export function usePlanData(householdId: string, completionsFrom: string) {
 
   // Step 1: load every plan table in parallel.
   const load = useCallback(async () => {
-    const [routines, steps, zones, zoneTasks, chores, overrides, completions] = await Promise.all([
+    const [routines, steps, zones, zoneTasks, chores, overrides, completions, binDays] = await Promise.all([
       supabase.from("routines").select("*").order("sort_order").order("created_at"),
       supabase.from("routine_steps").select("*").order("sort_order").order("created_at"),
       supabase.from("zones").select("*").order("sort_order").order("created_at"),
@@ -44,6 +47,7 @@ export function usePlanData(householdId: string, completionsFrom: string) {
       supabase.from("chores").select("*").order("next_due").order("created_at"),
       supabase.from("day_overrides").select("*").order("start_date"),
       supabase.from("completions").select("*").gte("for_date", completionsFrom),
+      supabase.from("bin_days").select("*").gte("date", completionsFrom).order("date"),
     ]);
     setData({
       routines: (routines.data ?? []) as Routine[],
@@ -53,6 +57,7 @@ export function usePlanData(householdId: string, completionsFrom: string) {
       chores: (chores.data ?? []) as Chore[],
       overrides: (overrides.data ?? []) as DayOverride[],
       completions: (completions.data ?? []) as Completion[],
+      binDays: (binDays.data ?? []) as BinDay[],
     });
     setLoading(false);
   }, [supabase, completionsFrom]);

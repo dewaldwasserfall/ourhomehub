@@ -16,6 +16,7 @@ import { usePathname } from "next/navigation";
 import { Avatar } from "./avatar";
 import { useHousehold } from "./household-context";
 import {
+  BinIcon,
   CalendarIcon,
   ChoreIcon,
   HolidayIcon,
@@ -40,6 +41,7 @@ const PLAN = [
   { href: "/household/routines", label: "Routines", Icon: RoutineIcon },
   { href: "/household/zones", label: "Zones", Icon: ZoneIcon },
   { href: "/household/chores", label: "Chores", Icon: ChoreIcon },
+  { href: "/household/bins", label: "Bin days", Icon: BinIcon },
   { href: "/household/holidays", label: "School holidays", Icon: HolidayIcon },
 ];
 

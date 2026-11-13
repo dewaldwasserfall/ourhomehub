@@ -8,6 +8,7 @@
  * Who-sees-what follows Today: adults get things assigned to them or to
  * nobody; children only what is assigned to them.
  */
+import { binList, binsAround, type BinDay } from "../bins";
 import { choreDueOn, stepApplies } from "../plan";
 import type { Occurrence } from "../calendar/types";
 import { timeKey } from "../calendar/time";
@@ -29,6 +30,8 @@ export interface Prefs {
   routine_nudge: boolean;
   routine_nudge_time: string;
   list_added: boolean;
+  bins: boolean;
+  bins_time: string;
 }
 
 /**
@@ -45,6 +48,8 @@ export function defaultPrefs(role: Member["role"]): Prefs {
     routine_nudge: false,
     routine_nudge_time: "07:45",
     list_added: false,
+    bins: !child,
+    bins_time: "19:00",
   };
 }
 
@@ -176,6 +181,21 @@ export function routineNudges(
     });
   }
   return notices;
+}
+
+// -----------------------------------------------------------------------------
+// Step 4b: bins, the evening before collection
+// -----------------------------------------------------------------------------
+
+export function binReminder(days: BinDay[], today: string): Notice | null {
+  const { tomorrow } = binsAround(days, today);
+  if (tomorrow.length === 0) return null;
+  return {
+    key: `bins:${today}`,
+    title: `Bins tonight: ${binList(tomorrow)}`,
+    body: "Collected tomorrow morning",
+    url: "/household/bins",
+  };
 }
 
 // -----------------------------------------------------------------------------

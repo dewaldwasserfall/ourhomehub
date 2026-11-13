@@ -33,6 +33,7 @@ import type { Occurrence } from "@/lib/calendar/types";
 import { useCalendar } from "@/lib/calendar/use-calendar";
 import { friendlyError } from "@/lib/errors";
 import { choreDueOn, describeDay, MODE_LABELS, stepApplies, TIME_OF_DAY_LABELS, timeOfDayAt, zoneFortnight } from "@/lib/plan";
+import { binColour, binList, binsAround } from "@/lib/bins";
 import { canTick } from "@/lib/roles";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { CompletionKind, DayInfo, ListEntry, Member, TimeOfDay } from "@/lib/types";
@@ -433,6 +434,36 @@ export default function TodayPage() {
           {dayLabel && <span className={`day-banner__mode day-banner__mode--${dayInfo?.mode}`}>{dayLabel}</span>}
         </div>
       </section>
+
+      {/* Bins: collected today, or going out tonight for tomorrow */}
+      {(() => {
+        const bins = binsAround(plan.binDays, today);
+        if (!bins.today.length && !bins.tomorrow.length) return null;
+        return (
+          <section className="section">
+            <Link href="/household/bins" className="group bin-banner">
+              {bins.tomorrow.length > 0 && (
+                <span className="bin-banner__line">
+                  <span className="bin-dots" aria-hidden="true">
+                    {bins.tomorrow.map((k) => <span key={k} className="bin-dot" style={{ background: binColour(k) }} />)}
+                  </span>
+                  <span>
+                    <strong>{binList(bins.tomorrow)}</strong> goes out tonight
+                  </span>
+                </span>
+              )}
+              {bins.today.length > 0 && (
+                <span className="bin-banner__line bin-banner__line--muted">
+                  <span className="bin-dots" aria-hidden="true">
+                    {bins.today.map((k) => <span key={k} className="bin-dot" style={{ background: binColour(k) }} />)}
+                  </span>
+                  <span>{binList(bins.today)} collection today</span>
+                </span>
+              )}
+            </Link>
+          </section>
+        );
+      })()}
 
       {/* 2. Up next */}
       {calendar.status && (

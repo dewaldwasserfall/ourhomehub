@@ -63,8 +63,8 @@ export default function NotificationsPage() {
     const endpoints = ((devices.data ?? []) as Array<{ endpoint: string }>).map((d) => d.endpoint);
     setOnHere(!!sub && endpoints.includes(sub.endpoint));
     setDeviceCount(endpoints.length);
-    if (saved.data) setPrefs(saved.data);
-  }, [supabase, me.id]);
+    if (saved.data) setPrefs({ ...defaultPrefs(me.role), ...saved.data });
+  }, [supabase, me.id, me.role]);
 
   useEffect(() => {
     load();
@@ -201,6 +201,16 @@ export default function NotificationsPage() {
           {prefs.routine_nudge && (
             <TimeRow label="At" value={prefs.routine_nudge_time} onChange={(v) => set("routine_nudge_time", v)} />
           )}
+        </div>
+
+        <div className="group" style={{ marginTop: 12 }}>
+          <SwitchRow
+            label="Bins"
+            hint="The evening before a collection"
+            checked={prefs.bins}
+            onChange={(v) => set("bins", v)}
+          />
+          {prefs.bins && <TimeRow label="At" value={prefs.bins_time} onChange={(v) => set("bins_time", v)} />}
         </div>
 
         {meIsAdult && (

@@ -251,3 +251,12 @@ export const BellIcon = (p: IconProps) => (
     <path d="M10 20.5a2.2 2.2 0 004 0" />
   </Svg>
 );
+
+/** Bin days: a wheelie bin */
+export const BinIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M5 7h14M9.5 7V5h5v2M6.5 7l1 12.5h9l1-12.5" />
+    <circle cx="8" cy="20" r="1" />
+    <circle cx="16" cy="20" r="1" />
+  </Svg>
+);
