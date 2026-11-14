@@ -2504,3 +2504,59 @@ textarea.input {
   font-size: 15px;
   color: var(--ink-2);
 }
+
+/* Trips: packing */
+.packing-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.packing-text:disabled {
+  cursor: default;
+}
+
+.packing-done {
+  color: var(--ink-3);
+  text-decoration: line-through;
+}
+
+.packing-child {
+  padding-left: 44px;
+}
+
+.packing-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+}
+
+/* Trips: budget */
+.trip-budget-total {
+  display: block;
+  font-size: 28px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.trip-amount {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.trip-amount__home {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink-3);
+}

@@ -150,6 +150,7 @@ beforeAll(async () => {
     "20261113001500_supplies.sql",
     "20261113001600_done_for.sql",
     "20261114000100_trips.sql",
+    "20261114000200_trip_packing_budget.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -1249,5 +1250,46 @@ describe("trips", () => {
     await expect(
       db.query(`insert into public.trip_stays (trip_id, name, check_in, check_out) values ($1, 'Oops', '2030-07-05', '2030-07-05')`, [trip]),
     ).rejects.toThrow();
+  });
+});
+
+describe("trip packing and budget", () => {
+  it("allows one level of groups, and keeps the money from children", async () => {
+    await actAs("dewald");
+    const trip = (await one<{ id: string }>(`select id from public.trips where name = 'Spain'`)).id;
+
+    // A group with an item, and a nested group refused.
+    const group = (await one<{ id: string }>(`insert into public.trip_checklist (trip_id, text) values ($1, 'Car rental') returning id`, [trip])).id;
+    const child = (
+      await one<{ id: string }>(`insert into public.trip_checklist (trip_id, text, parent_id) values ($1, 'Licence', $2) returning id`, [trip, group])
+    ).id;
+    await expect(
+      db.query(`insert into public.trip_checklist (trip_id, text, parent_id) values ($1, 'Too deep', $2)`, [trip, child]),
+    ).rejects.toThrow(/invalid_group/);
+
+    // Budget and a rate.
+    await db.query(`insert into public.trip_budget (trip_id, title, category, amount_cents, currency) values ($1, 'Villa', 'Accommodation', 150000, 'EUR')`, [trip]);
+    await db.query(`insert into public.trip_rates (trip_id, currency, rate) values ($1, 'GBP', 1.17)`, [trip]);
+    await expect(
+      db.query(`insert into public.trip_budget (trip_id, title, category, amount_cents) values ($1, 'Bad', 'Nonsense', 1)`, [trip]),
+    ).rejects.toThrow();
+
+    // The kid (given Trips access earlier) sees packing, not money.
+    await actAs("kid");
+    expect(await all(`select id from public.trip_checklist`)).toHaveLength(2);
+    expect(await all(`select id from public.trip_budget`)).toHaveLength(0);
+    expect(await all(`select * from public.trip_rates`)).toHaveLength(0);
+    const ticked = await db.query(`update public.trip_checklist set done = true where id = $1`, [child]);
+    expect(ticked.affectedRows).toBe(0);
+
+    // School days: a weekday is a school day, a weekend isn't.
+    const days = await all<{ d: string }>(`select d::text as d from public.school_days('2030-07-05', '2030-07-08') d`);
+    expect(days.map((r) => r.d)).not.toContain("2030-07-06"); // Saturday
+    expect(days.map((r) => r.d)).not.toContain("2030-07-07"); // Sunday
+
+    // Deleting the group takes its items with it.
+    await actAs("dewald");
+    await db.query(`delete from public.trip_checklist where id = $1`, [group]);
+    expect(await all(`select id from public.trip_checklist where trip_id = $1`, [trip])).toHaveLength(0);
   });
 });

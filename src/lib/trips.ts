@@ -11,9 +11,10 @@
  *   * participantDates()– "joins 3 Jul" / "leaves 8 Jul"
  *   * tripsOnDay()      – trips covering a date (calendar)
  *   * todayTrip()       – the trip to show on Today (during, or within a week)
+ *   * missedSchool()    – children on the trip, with the school days they'd miss
  */
 import { addDays, daysBetweenKeys } from "./calendar/time";
-import type { Trip, TripParticipant, TripPlan, TripStay } from "./types";
+import type { Member, Trip, TripParticipant, TripPlan, TripStay } from "./types";
 
 const dayMonthFormat = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 const noon = (date: string) => new Date(`${date}T12:00:00Z`);
@@ -158,4 +159,30 @@ export function todayTrip<T extends Pick<Trip, "start_date" | "end_date">>(trips
     .filter((t) => t.start_date > today && daysBetweenKeys(today, t.start_date) <= 7)
     .sort((a, b) => a.start_date.localeCompare(b.start_date));
   return soon[0] ?? null;
+}
+
+// -----------------------------------------------------------------------------
+// Step 5: school
+// -----------------------------------------------------------------------------
+
+/**
+ * Children going on the trip and the school days they'd miss (only the days
+ * they're there, so "joins later" counts). `schoolDays` comes from the
+ * school_days() RPC: the same holiday rules as Today.
+ */
+export function missedSchool(
+  participants: TripParticipant[],
+  members: Pick<Member, "id" | "role">[],
+  schoolDays: string[],
+): Array<{ memberId: string; days: string[] }> {
+  const children = new Set(members.filter((m) => m.role === "child").map((m) => m.id));
+  return participants
+    .filter((p) => children.has(p.member_id))
+    .map((p) => ({ memberId: p.member_id, days: schoolDays.filter((d) => isThere(p, d)).sort() }))
+    .filter((x) => x.days.length > 0);
+}
+
+/** "Shannon and Lennon", "Shannon, Lennon and Jana" */
+export function namesList(names: string[]): string {
+  return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }

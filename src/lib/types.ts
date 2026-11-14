@@ -301,3 +301,51 @@ export interface TripPlan {
   details: string;
   created_at: string;
 }
+
+export interface TripChecklistItem {
+  id: string;
+  trip_id: string;
+  household_id: string;
+  /** The group it's in (one level); null = top level. */
+  parent_id: string | null;
+  text: string;
+  done: boolean;
+  /** Who it's for; null = shared. */
+  member_id: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+/** A saved packing list: top-level items, each optionally a group. */
+export interface ChecklistTemplate {
+  id: string;
+  household_id: string;
+  name: string;
+  items: Array<{ text: string; children?: string[] }>;
+  created_at: string;
+}
+
+export const BUDGET_CATEGORIES = ["Transport", "Accommodation", "Food & drink", "Activities", "Shopping", "Visas & fees", "Other"] as const;
+export type BudgetCategory = (typeof BUDGET_CATEGORIES)[number];
+
+export interface TripBudgetItem {
+  id: string;
+  trip_id: string;
+  household_id: string;
+  title: string;
+  category: BudgetCategory;
+  amount_cents: number;
+  currency: string;
+  paid: boolean;
+  date: string | null;
+  created_at: string;
+}
+
+/** 1 unit of `currency` = `rate` units of the trip's home currency. */
+export interface TripRate {
+  trip_id: string;
+  household_id: string;
+  currency: string;
+  /** Numeric from Postgres arrives as a string. */
+  rate: number | string;
+}

@@ -3,7 +3,10 @@
  *
  *   * useTrips(householdId, enabled) – every trip with who's going (the
  *     Trips list, the calendar and Today)
- *   * useTrip(tripId)               – one trip with its stays and plans
+ *   * useTrip(tripId)               – one trip with its stays, plans, packing,
+ *                                     budget and rates (budget and rates come
+ *                                     back empty for children: RLS)
+ *   * useChecklistTemplates(...)    – saved packing lists
  *
  * Both keep an offline copy and reload on realtime changes and when the
  * screen comes back into view. `enabled` is false for people without access
@@ -14,7 +17,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { isNetworkError, readCache, SYNCED_EVENT, writeCache } from "./offline";
 import { getSupabaseBrowserClient } from "./supabase/client";
-import type { Trip, TripParticipant, TripPlan, TripStay } from "./types";
+import type { ChecklistTemplate, Trip, TripBudgetItem, TripChecklistItem, TripParticipant, TripPlan, TripRate, TripStay } from "./types";
 
 // -----------------------------------------------------------------------------
 // Step 1: all trips
@@ -78,9 +81,12 @@ export interface TripDetail {
   participants: TripParticipant[];
   stays: TripStay[];
   plans: TripPlan[];
+  checklist: TripChecklistItem[];
+  budget: TripBudgetItem[];
+  rates: TripRate[];
 }
 
-const EMPTY: TripDetail = { trip: null, participants: [], stays: [], plans: [] };
+const EMPTY: TripDetail = { trip: null, participants: [], stays: [], plans: [], checklist: [], budget: [], rates: [] };
 
 export function useTrip(tripId: string) {
   const supabase = getSupabaseBrowserClient();
@@ -89,11 +95,14 @@ export function useTrip(tripId: string) {
   const [missing, setMissing] = useState(false);
 
   const reload = useCallback(async () => {
-    const [t, p, s, pl] = await Promise.all([
+    const [t, p, s, pl, c, b, r] = await Promise.all([
       supabase.from("trips").select("*").eq("id", tripId).maybeSingle(),
       supabase.from("trip_participants").select("*").eq("trip_id", tripId),
       supabase.from("trip_stays").select("*").eq("trip_id", tripId).order("check_in"),
       supabase.from("trip_plans").select("*").eq("trip_id", tripId).order("day"),
+      supabase.from("trip_checklist").select("*").eq("trip_id", tripId).order("sort_order"),
+      supabase.from("trip_budget").select("*").eq("trip_id", tripId),
+      supabase.from("trip_rates").select("*").eq("trip_id", tripId),
     ]);
     if (t.error && isNetworkError(t.error)) {
       const cached = readCache<TripDetail>(`trip:${tripId}`);
@@ -112,6 +121,9 @@ export function useTrip(tripId: string) {
       participants: (p.data ?? []) as TripParticipant[],
       stays: (s.data ?? []) as TripStay[],
       plans: (pl.data ?? []) as TripPlan[],
+      checklist: (c.data ?? []) as TripChecklistItem[],
+      budget: (b.data ?? []) as TripBudgetItem[],
+      rates: (r.data ?? []) as TripRate[],
     };
     setData(next);
     writeCache(`trip:${tripId}`, next);
@@ -130,6 +142,9 @@ export function useTrip(tripId: string) {
       .on("postgres_changes", { event: "*", schema: "public", table: "trip_participants", filter }, () => reload())
       .on("postgres_changes", { event: "*", schema: "public", table: "trip_stays", filter }, () => reload())
       .on("postgres_changes", { event: "*", schema: "public", table: "trip_plans", filter }, () => reload())
+      .on("postgres_changes", { event: "*", schema: "public", table: "trip_checklist", filter }, () => reload())
+      .on("postgres_changes", { event: "*", schema: "public", table: "trip_budget", filter }, () => reload())
+      .on("postgres_changes", { event: "*", schema: "public", table: "trip_rates", filter }, () => reload())
       .subscribe();
     return () => {
       document.removeEventListener("visibilitychange", onVisible);
@@ -139,4 +154,30 @@ export function useTrip(tripId: string) {
   }, [supabase, tripId, reload]);
 
   return { ...data, loading, missing, reload };
+}
+
+// -----------------------------------------------------------------------------
+// Step 3: saved packing lists
+// -----------------------------------------------------------------------------
+
+export function useChecklistTemplates(householdId: string, enabled: boolean) {
+  const supabase = getSupabaseBrowserClient();
+  const [templates, setTemplates] = useState<ChecklistTemplate[]>([]);
+
+  const reload = useCallback(async () => {
+    if (!enabled) return;
+    const { data, error } = await supabase.from("checklist_templates").select("*").eq("household_id", householdId).order("name");
+    if (error && isNetworkError(error)) {
+      setTemplates(readCache<ChecklistTemplate[]>(`checklist-templates:${householdId}`) ?? []);
+      return;
+    }
+    setTemplates((data ?? []) as ChecklistTemplate[]);
+    writeCache(`checklist-templates:${householdId}`, data ?? []);
+  }, [supabase, householdId, enabled]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  return { templates, reload };
 }

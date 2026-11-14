@@ -6,21 +6,26 @@
  *              notes. Edit or delete the trip.
  *   Days     – the day-by-day timeline: check-outs, check-ins, plans in time
  *              order, and where you sleep that night.
+ *   Packing  – groups, per-person items, saved lists (components/trip-packing)
+ *   Budget   – costs in several currencies, paid or not (adults only;
+ *              components/trip-budget)
  *
- * Adults with access edit; children with access only read. (Packing, budget
- * and documents arrive as more sections in the next phases.)
+ * Adults with access edit; children with access only read. (Documents
+ * arrive in the next phase.)
  */
 "use client";
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Avatar } from "@/components/avatar";
 import { useHousehold } from "@/components/household-context";
 import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from "@/components/icons";
 import { Navbar } from "@/components/navbar";
 import { Segmented } from "@/components/segmented";
 import { useToast } from "@/components/toast";
+import { TripBudget } from "@/components/trip-budget";
+import { TripPacking } from "@/components/trip-packing";
 import {
   EMERGENCY_LABELS,
   EmergencySheet,
@@ -38,6 +43,8 @@ import { canEditTrips } from "@/lib/roles";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
   buildTripDays,
+  missedSchool,
+  namesList,
   nightsWithoutStay,
   participantDates,
   planTime,
@@ -50,7 +57,7 @@ import {
 import type { TripEmergency, TripParticipant, TripPlan, TripStay } from "@/lib/types";
 import { useTrip } from "@/lib/use-trips";
 
-type Section = "overview" | "days";
+type Section = "overview" | "days" | "packing" | "budget";
 
 const dayHeading = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 const heading = (date: string) => dayHeading.format(new Date(`${date}T12:00:00Z`));
@@ -63,7 +70,7 @@ export default function TripPage() {
   const { household, members, me, memberById } = useHousehold();
   const today = dateKey(new Date(), household.timezone);
   const canEdit = canEditTrips(me);
-  const { trip, participants, stays, plans, loading, missing, reload } = useTrip(id);
+  const { trip, participants, stays, plans, checklist, budget, rates, loading, missing, reload } = useTrip(id);
   const [section, setSection] = useState<Section>("overview");
 
   // Which sheet is open.
@@ -74,6 +81,17 @@ export default function TripPage() {
   const [person, setPerson] = useState<TripParticipant | null>(null);
 
   const days = useMemo(() => (trip ? buildTripDays(trip, stays, plans) : []), [trip, stays, plans]);
+
+  // School days during the trip (same holiday rules as Today), to warn when
+  // a child going would miss school.
+  const [schoolDays, setSchoolDays] = useState<string[]>([]);
+  useEffect(() => {
+    if (!trip) return;
+    supabase.rpc("school_days", { p_from: trip.start_date, p_to: trip.end_date }).then(({ data }) => {
+      setSchoolDays(((data ?? []) as string[]).map((d) => String(d).slice(0, 10)));
+    });
+  }, [supabase, trip?.start_date, trip?.end_date]); // eslint-disable-line react-hooks/exhaustive-deps
+  const missed = useMemo(() => missedSchool(participants, members, schoolDays), [participants, members, schoolDays]);
 
   /** Run a write; show any error; reload. Returns whether it worked. */
   async function run(write: PromiseLike<{ error: { message: string } | null }>): Promise<boolean> {
@@ -207,6 +225,9 @@ export default function TripPage() {
           options={[
             { value: "overview", label: "Overview" },
             { value: "days", label: "Days" },
+            { value: "packing", label: "Packing" },
+            // Money is for adults with access only (children see the rest).
+            ...(canEdit ? [{ value: "budget" as const, label: "Budget" }] : []),
           ]}
         />
       </section>
@@ -229,6 +250,27 @@ export default function TripPage() {
                 </span>
                 {phase.phase !== "past" && <span className={`trip-badge trip-badge--${phase.phase}`}>{phase.label}</span>}
               </div>
+              {missed.length > 0 && (
+                <div className="row">
+                  <span className="row__body">
+                    <span className="row__title trip-warning">
+                      {(() => {
+                        // Same days for everyone: one line; otherwise per child.
+                        const same = missed.every((m) => m.days.join() === missed[0].days.join());
+                        const name = (id: string) => memberById(id)?.display_name.split(" ")[0] ?? "";
+                        const n = (d: string[]) => (d.length === 1 ? "1 school day" : `${d.length} school days`);
+                        return same
+                          ? `${namesList(missed.map((m) => name(m.memberId)))} would miss ${n(missed[0].days)}`
+                          : missed.map((m) => `${name(m.memberId)} ${n(m.days)}`).join(" · ") + " missed";
+                      })()}
+                    </span>
+                    <span className="row__subtitle">
+                      {[...new Set(missed.flatMap((m) => m.days))].sort().slice(0, 6).map(shortDate).join(", ")}
+                      {new Set(missed.flatMap((m) => m.days)).size > 6 ? "…" : ""}
+                    </span>
+                  </span>
+                </div>
+              )}
               {noStay.length > 0 && (
                 <button type="button" className="row row--pressable" onClick={() => canEdit && setStay({ stay: null })} disabled={!canEdit}>
                   <span className="row__body">
@@ -411,6 +453,22 @@ export default function TripPage() {
           })}
         </>
       )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* Packing and budget                                            */}
+      {/* ------------------------------------------------------------- */}
+      {section === "packing" && (
+        <TripPacking
+          tripId={trip.id}
+          householdId={household.id}
+          items={checklist}
+          going={members.filter((m) => participants.some((p) => p.member_id === m.id))}
+          memberById={memberById}
+          canEdit={canEdit}
+          reload={reload}
+        />
+      )}
+      {section === "budget" && canEdit && <TripBudget trip={trip} items={budget} rates={rates} reload={reload} />}
 
       {/* Sheets */}
       <TripSheet
