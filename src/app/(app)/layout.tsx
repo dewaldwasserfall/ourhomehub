@@ -28,7 +28,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   // Step 2: which household are they in? (RLS only returns their own rows.)
   const { data: me } = await supabase.from("members").select("*").eq("user_id", user.id).maybeSingle<Member>();
-  if (!me) redirect("/onboarding");
+  if (!me) {
+    // A paired wall tablet has no member row: it lives on /board.
+    const { data: board } = await supabase.from("boards").select("id").eq("user_id", user.id).maybeSingle();
+    redirect(board ? "/board" : "/onboarding");
+  }
 
   // Step 3: the household and everyone in it.
   const [{ data: household }, { data: members }] = await Promise.all([

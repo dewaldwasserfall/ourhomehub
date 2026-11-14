@@ -79,6 +79,8 @@ const USERS = {
   outsider: { id: "44444444-4444-4444-8444-444444444444", email: "outsider@example.com" },
   aupair: { id: "55555555-5555-4555-8555-555555555555", email: "aupair@example.com" },
   kid: { id: "66666666-6666-4666-8666-666666666666", email: "kid@example.com" },
+  // A wall tablet's own sign-in: not on the allowlist, no member row.
+  board: { id: "77777777-7777-4777-8777-777777777777", email: "board-1@board.ourhomehub.nl" },
 } as const;
 
 type UserKey = keyof typeof USERS;
@@ -153,6 +155,7 @@ beforeAll(async () => {
     "20261114000200_trip_packing_budget.sql",
     "20261114000300_trip_documents_ids.sql",
     "20261114000400_member_ids_details.sql",
+    "20261114000500_family_board.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -1336,5 +1339,129 @@ describe("trip documents and IDs", () => {
     await actAs("kid");
     expect(await all(`select id from public.trip_documents`)).toHaveLength(0);
     expect(await all(`select id from public.member_ids`)).toHaveLength(0);
+  });
+});
+
+describe("family board", () => {
+  it("pairs with a one-time code, reads like a child and never sees money or trips", async () => {
+    // An adult makes a code; children can't.
+    await actAs("kid");
+    await expect(db.query(`select public.create_board_code()`)).rejects.toThrow(/adults_only/);
+    await actAs("dewald");
+    const code = (await one<{ c: string }>(`select public.create_board_code() as c`)).c;
+    expect(code).toMatch(/^[0-9]{8}$/);
+
+    // Only the server claims it, once.
+    await expect(db.query(`select public.claim_board_code($1, $2)`, [code, USERS.board.id])).rejects.toThrow();
+    await actAsAdmin();
+    await db.query(`select public.claim_board_code($1, $2)`, [code, USERS.board.id]);
+    await expect(db.query(`select public.claim_board_code($1, $2)`, [code, USERS.outsider.id])).rejects.toThrow(/invalid_code/);
+
+    // The board reads the household like a child: members, chores, to-dos.
+    await actAs("board");
+    expect((await all(`select id from public.members`)).length).toBeGreaterThan(1);
+    expect((await all(`select id from public.chores`)).length).toBeGreaterThan(0);
+    // ...but nothing private, and it can't write anything directly.
+    expect(await all(`select * from public.bunq_connections`)).toHaveLength(0);
+    expect(await all(`select * from public.trips`)).toHaveLength(0);
+    expect(await all(`select * from public.member_ids`)).toHaveLength(0);
+    expect(await all(`select * from public.notification_prefs`)).toHaveLength(0);
+    await expect(
+      db.query(`insert into public.chores (household_id, title, every_n, unit, next_due) values ($1, 'Hack', 1, 'day', '2030-01-01')`, [householdId]),
+    ).rejects.toThrow();
+    await expect(db.query(`select public.set_completion('chore', gen_random_uuid(), '2030-01-01', true)`)).rejects.toThrow(/not_in_household/);
+  });
+
+  it("holds a child's board tick until any adult confirms it; adults' ticks count at once", async () => {
+    await actAs("dewald");
+    const id = async (user: keyof typeof USERS) =>
+      (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS[user].id])).id;
+    const [kid, dewald, partner] = [await id("kid"), await id("dewald"), await id("partner")];
+    const day = "2030-04-01";
+    const stars = async () => (await one<{ earned: number }>(`select earned from public.member_stars($1, $2)`, [kid, day])).earned;
+    const before = await stars();
+
+    // The kid's chore (linked to a supply), an unassigned chore and an unassigned to-do.
+    const kidsChore = (
+      await one<{ id: string }>(
+        `insert into public.chores (household_id, title, every_n, unit, next_due, assigned_to) values ($1, 'Make the bed', 1, 'day', $2, $3) returning id`,
+        [householdId, day, kid],
+      )
+    ).id;
+    const anyChore = (
+      await one<{ id: string }>(
+        `insert into public.chores (household_id, title, every_n, unit, next_due) values ($1, 'Sweep the porch', 1, 'day', $2) returning id`,
+        [householdId, day],
+      )
+    ).id;
+    const itemId = (await one<{ id: string }>(`select public.ensure_item('Bed spray') as id`)).id;
+    const supply = (
+      await one<{ id: string }>(`insert into public.supplies (household_id, item_id, uses_per_pack, uses_left, warn_at) values ($1, $2, 10, 10, 0) returning id`, [
+        householdId,
+        itemId,
+      ])
+    ).id;
+    await db.query(`insert into public.supply_uses (supply_id, household_id, kind, task_id) values ($1, $2, 'chore', $3)`, [supply, householdId, kidsChore]);
+    const left = async () => (await one<{ n: number }>(`select uses_left as n from public.supplies where id = $1`, [supply])).n;
+    const todoList = (await one<{ id: string }>(`select id from public.lists where type = 'todo' limit 1`)).id;
+    const todo = (await one<{ id: string }>(`select public.add_entry($1, 'Feed the fish') as id`, [todoList])).id;
+
+    await actAs("board");
+    // Someone else's task can't be credited to another person.
+    await expect(db.query(`select public.board_set_completion('chore', $1, $2, true, $3)`, [kidsChore, day, dewald])).rejects.toThrow(
+      /assigned_to_someone_else/,
+    );
+    // The kid ticks their chore and the to-do; Dewald ticks the unassigned chore.
+    await db.query(`select public.board_set_completion('chore', $1, $2, true, $3)`, [kidsChore, day, kid]);
+    await db.query(`select public.board_set_entry($1, true, $2)`, [todo, kid]);
+    await db.query(`select public.board_set_completion('chore', $1, $2, true, $3)`, [anyChore, day, dewald]);
+
+    const tick = async (item: string) =>
+      one<{ pending: boolean; done_for: string; via_board: boolean }>(`select pending, done_for, via_board from public.completions where item_id = $1`, [item]);
+    expect(await tick(kidsChore)).toMatchObject({ pending: true, done_for: kid, via_board: true });
+    expect(await tick(anyChore)).toMatchObject({ pending: false, done_for: dewald });
+    expect(await one(`select status, pending, done_for from public.list_entries where id = $1`, [todo])).toMatchObject({
+      status: "done",
+      pending: true,
+      done_for: kid,
+    });
+    // Waiting: no stars, no supply used.
+    expect(await stars()).toBe(before);
+    expect(await left()).toBe(10);
+    // The board can take back its own pending tick (a mis-tap) and redo it.
+    await db.query(`select public.board_set_completion('chore', $1, $2, false, $3)`, [kidsChore, day, kid]);
+    expect(await all(`select id from public.completions where item_id = $1`, [kidsChore])).toHaveLength(0);
+    await db.query(`select public.board_set_completion('chore', $1, $2, true, $3)`, [kidsChore, day, kid]);
+
+    // Children and boards can't confirm.
+    await expect(db.query(`select public.confirm_ticks(array[]::uuid[], array[]::uuid[])`)).rejects.toThrow(/adults_only/);
+    await actAs("kid");
+    await expect(db.query(`select public.confirm_ticks(array[]::uuid[], array[]::uuid[])`)).rejects.toThrow(/adults_only/);
+
+    // Any adult confirms: stars and supplies count now.
+    await actAs("partner");
+    const chorePending = (await one<{ id: string }>(`select id from public.completions where item_id = $1`, [kidsChore])).id;
+    expect((await one<{ n: number }>(`select public.confirm_ticks(array[$1]::uuid[], array[$2]::uuid[]) as n`, [chorePending, todo])).n).toBe(2);
+    expect(await one(`select pending, confirmed_by from public.completions where id = $1`, [chorePending])).toMatchObject({
+      pending: false,
+      confirmed_by: partner,
+    });
+    expect(await stars()).toBe(before + 2);
+    expect(await left()).toBe(9);
+
+    // Once confirmed, the board can't undo it.
+    await actAs("board");
+    await expect(db.query(`select public.board_set_completion('chore', $1, $2, false, $3)`, [kidsChore, day, kid])).rejects.toThrow(/ask_a_grown_up/);
+
+    // Rejecting: the chore is undone and gets its due date back.
+    const next = "2030-04-02";
+    await db.query(`select public.board_set_completion('chore', $1, $2, true, $3)`, [kidsChore, next, kid]);
+    await actAs("dewald");
+    expect((await one<{ d: string }>(`select next_due::text as d from public.chores where id = $1`, [kidsChore])).d).toBe("2030-04-03");
+    const second = (await one<{ id: string }>(`select id from public.completions where item_id = $1 and for_date = $2`, [kidsChore, next])).id;
+    await db.query(`select public.reject_ticks(array[$1]::uuid[], array[]::uuid[])`, [second]);
+    expect(await all(`select id from public.completions where id = $1`, [second])).toHaveLength(0);
+    expect((await one<{ d: string }>(`select next_due::text as d from public.chores where id = $1`, [kidsChore])).d).toBe(next);
+    expect(await left()).toBe(9);
   });
 });

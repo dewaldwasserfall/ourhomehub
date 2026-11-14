@@ -2579,3 +2579,402 @@ textarea.input {
 .id-expiry--expired {
   color: #ff3b30;
 }
+
+/* =============================================================================
+   Family board (wall tablet, landscape)
+   Big type and big tap targets, readable from a couple of steps away.
+   ============================================================================= */
+
+/* Pairing screen */
+.board-pair {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--canvas);
+}
+.board-pair__card {
+  width: min(460px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 28px;
+  background: var(--surface);
+  border-radius: var(--radius-group);
+}
+.board-pair__title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+}
+.board-pair__text {
+  margin: 0;
+  color: var(--ink-2);
+  line-height: 1.45;
+}
+.board-pair__code {
+  font-size: 40px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-align: center;
+  padding: 12px;
+  border: 1.5px solid var(--separator);
+  border-radius: 12px;
+  background: var(--canvas);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Frame */
+.board {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--canvas);
+  padding: max(16px, env(safe-area-inset-top)) 20px 16px;
+  transition: transform 2s ease;
+}
+.board-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+}
+.board-top__when {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+.board-top__time {
+  font-size: 44px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.board-top__date {
+  font-size: 20px;
+  color: var(--ink-2);
+}
+.board-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  background: var(--fill);
+  border-radius: 999px;
+}
+.board-tab {
+  padding: 10px 22px;
+  border-radius: 999px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink-2);
+  text-decoration: none;
+}
+.board-tab[aria-current="page"] {
+  background: var(--surface);
+  color: var(--ink);
+}
+.board-battery {
+  margin-bottom: 12px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: rgba(255, 149, 0, 0.16);
+  color: #c46a00;
+  font-weight: 600;
+}
+.board-body {
+  flex: 1;
+  min-height: 0;
+}
+/* The calendar tab reuses the phone screen: let it use the full width. */
+.board-body .screen {
+  max-width: none;
+}
+.board-dim {
+  position: fixed;
+  inset: 0;
+  border: 0;
+  background: rgba(0, 0, 0, 0.72);
+  cursor: pointer;
+  z-index: 50;
+}
+
+/* Today: side panel + columns */
+.board-today {
+  display: grid;
+  grid-template-columns: minmax(240px, 28%) 1fr;
+  gap: 16px;
+  height: 100%;
+}
+.board-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.board-mode {
+  align-self: flex-start;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 18px;
+  font-weight: 700;
+  background: var(--fill);
+  color: var(--ink-2);
+}
+.board-mode--school {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.board-mode--holiday {
+  background: rgba(255, 149, 0, 0.16);
+  color: #c46a00;
+}
+.board-card {
+  padding: 16px;
+  background: var(--surface);
+  border-radius: var(--radius-group);
+}
+.board-card__title {
+  margin: 0 0 10px;
+  font-size: 18px;
+  font-weight: 700;
+}
+.board-muted {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 17px;
+}
+.board-bins__line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 18px;
+}
+.board-bins__line + .board-bins__line {
+  margin-top: 8px;
+}
+.board-event {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 10px;
+  padding: 8px 0;
+  font-size: 18px;
+  border-top: 1px solid var(--separator);
+}
+.board-event:first-of-type {
+  border-top: 0;
+}
+.board-event__time {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.board-event__title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Columns: as many as fit, scroll sideways beyond that. */
+.board-columns {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(230px, 1fr);
+  gap: 14px;
+  overflow-x: auto;
+  align-items: start;
+}
+.board-empty {
+  grid-column: 1 / -1;
+}
+.board-col {
+  background: var(--surface);
+  border-radius: var(--radius-group);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.board-col__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.board-col__name {
+  font-size: 22px;
+  font-weight: 700;
+  flex: 1;
+  min-width: 0;
+}
+.board-col__stars {
+  font-size: 18px;
+  font-weight: 700;
+  color: #c46a00;
+}
+.board-col__anyone {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--fill);
+  color: var(--ink-2);
+  font-weight: 700;
+}
+.board-col__progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--fill);
+  overflow: hidden;
+}
+.board-col__progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+.board-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.board-item {
+  width: 100%;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--canvas);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.board-item:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+.board-item__check {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2.5px solid var(--separator);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 17px;
+}
+.board-item--done .board-item__check {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+/* Waiting for a grown-up: an outlined amber check. */
+.board-item--pending .board-item__check {
+  border-color: #ff9500;
+  color: #c46a00;
+}
+.board-item__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.board-item__title {
+  font-size: 19px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.board-item--done .board-item__title {
+  color: var(--ink-2);
+  text-decoration: line-through;
+}
+.board-item__note {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.board-item--pending .board-item__note {
+  color: #c46a00;
+}
+.board-item--late .board-item__note {
+  color: #d70015;
+}
+
+/* Who did it? */
+.board-who {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 8px;
+}
+.board-who__people {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 12px;
+}
+.board-who__person {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 8px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--canvas);
+  color: var(--ink);
+  font: inherit;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Portrait or small screens: side panel above the columns. */
+@media (max-width: 900px) {
+  .board-today {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board,
+  .board-col__progress span {
+    transition: none;
+  }
+}
+
+/* "Waiting for you" (adults confirm board ticks) */
+.chip-button--strong {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.chip-button--strong:active {
+  background: var(--accent);
+  opacity: 0.85;
+}
+.waiting-row {
+  gap: 10px;
+}
+.waiting-row__actions {
+  gap: 6px;
+}
+
+/* Pairing code on Household → Family board */
+.board-code .row__body {
+  gap: 6px;
+  padding: 6px 0;
+}
+.board-code__digits {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  font-variant-numeric: tabular-nums;
+}

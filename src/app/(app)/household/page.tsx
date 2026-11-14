@@ -26,6 +26,7 @@ import {
   RoutineIcon,
   ShareIcon,
   StarIcon,
+  TabletIcon,
   WalletIcon,
   ZoneIcon,
 } from "@/components/icons";
@@ -46,6 +47,7 @@ const PLAN_LINKS = [
   { href: "/stars", title: "Stars and rewards", subtitle: "What the kids earn for ticking things off", Icon: StarIcon, colour: "#ffb800" },
   { href: "/household/bins", title: "Bin days", subtitle: "Collection dates from the Afvalservice app", Icon: BinIcon, colour: "#2f9e44" },
   { href: "/household/holidays", title: "School holidays", subtitle: "Holidays, public holidays and days off", Icon: HolidayIcon, colour: "#ff2d55" },
+  { href: "/household/board", title: "Family board", subtitle: "A wall tablet with everyone's day", Icon: TabletIcon, colour: "#8e8e93" },
 ];
 
 export default function HouseholdPage() {

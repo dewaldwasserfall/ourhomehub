@@ -11,6 +11,9 @@
  *   5. Zone         this fortnight's zone, progress and the next tasks
  *   6. Groceries    one line that opens the list
  *
+ * Adults also get "Waiting for you": ticks the kids made on the Family board
+ * that need a grown-up to confirm them.
+ *
  * Who sees what: things assigned to someone show only on their Today;
  * unassigned things show on every adult's Today and disappear for everyone
  * once ticked. Children see only what is theirs. Adults can switch on
@@ -42,6 +45,7 @@ import { useBudget } from "@/lib/use-budget";
 import { useStars } from "@/lib/use-stars";
 import { enqueue, isNetworkError, readCache, SYNCED_EVENT, writeCache } from "@/lib/offline";
 import { StarCard } from "@/components/star-card";
+import { WaitingCard } from "@/components/waiting-card";
 import { canSeeFinances, canTick } from "@/lib/roles";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { CompletionKind, DayInfo, ListEntry, Member, TimeOfDay } from "@/lib/types";
@@ -598,6 +602,9 @@ export default function TodayPage() {
       </div>
 
       <div className="today-col">
+      {/* Ticked on the Family board by the kids: an adult confirms */}
+      {meIsAdult && <WaitingCard plan={plan} onChanged={plan.reload} onError={toast.show} />}
+
       {loading && (
         <section className="section">
           <div className="group" aria-busy="true" aria-label="Loading today">

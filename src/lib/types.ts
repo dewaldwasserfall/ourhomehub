@@ -105,6 +105,14 @@ export interface ListEntry {
   due_date: string | null;
   /** To-dos only: optional member id; null = anyone. */
   assigned_to: string | null;
+  /** Family board: ticked there for a child, waiting for an adult. */
+  pending?: boolean;
+  /** Family board: ticked on the board (the board may undo it until confirmed). */
+  via_board?: boolean;
+  /** Who it counts for when not the assignee (set on the board). */
+  done_for?: string | null;
+  confirmed_by?: string | null;
+  confirmed_at?: string | null;
 }
 
 /** A list entry joined with its item and that item's learned pattern. */
@@ -215,6 +223,12 @@ export interface Completion {
   /** Who it counts for: the task's assignee, else whoever ticked it. */
   done_for: string | null;
   done_at: string;
+  /** Family board: ticked there for a child, waiting for an adult. */
+  pending?: boolean;
+  /** Family board: ticked on the board (the board may undo it until confirmed). */
+  via_board?: boolean;
+  confirmed_by?: string | null;
+  confirmed_at?: string | null;
 }
 
 /** A product that runs down with use (washing liquid: 40 uses a bottle). */

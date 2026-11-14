@@ -306,3 +306,11 @@ export const SuitcaseIcon = (p: IconProps) => (
     <path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7M8 7v12.5M16 7v12.5" />
   </Svg>
 );
+
+/** Family board: a tablet on the wall */
+export const TabletIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3" y="5" width="18" height="13" rx="2.5" />
+    <path d="M10.5 15.5h3" />
+  </Svg>
+);

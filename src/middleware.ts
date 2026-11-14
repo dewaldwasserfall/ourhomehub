@@ -18,6 +18,10 @@ const PUBLIC_PATHS = [
   // Called by Google and Vercel Cron; each checks its own secret.
   "/api/calendar/webhook",
   "/api/cron/",
+  // The Family board: the tablet pairs with a one-time code before it has a
+  // session (the board layout shows the pairing screen when signed out).
+  "/board",
+  "/api/board/pair",
 ];
 
 export async function middleware(request: NextRequest) {
