@@ -44,3 +44,11 @@ export function roleLabel(role: Member["role"]): string {
 export function canManageHome(member: Pick<Member, "role" | "can_manage_home">): boolean {
   return member.role === "owner" || (member.role === "adult" && Boolean(member.can_manage_home));
 }
+
+/**
+ * Sees the Vault (passports and ID cards): grown-ups with Trips access. Same
+ * rule as the member_ids policy (can_edit_trips), so kids never see it.
+ */
+export function canSeeVault(member: Pick<Member, "role" | "can_see_trips">): boolean {
+  return canEditTrips(member);
+}

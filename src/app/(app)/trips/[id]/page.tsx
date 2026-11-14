@@ -320,7 +320,7 @@ export default function TripPage() {
                       ? `${name}'s ${idLabel(w.id!).toLowerCase()} expires before you're back`
                       : `${name}'s ${idLabel(w.id!).toLowerCase()} has less than 6 months left after the trip`;
                 return (
-                  <Link key={w.memberId} href="/trips/ids" className="row row--link">
+                  <Link key={w.memberId} href="/vault" className="row row--link">
                     <span className="row__body">
                       <span className="row__title trip-warning">{text}</span>
                       <span className="row__subtitle">

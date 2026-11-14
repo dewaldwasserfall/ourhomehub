@@ -95,6 +95,6 @@ export function idReminder(
     key: `id:${id.id}:${id.expiry_date}:${step.days}`,
     title: `${name}'s ${id.kind === "passport" ? "passport" : "ID card"} expires ${step.label}`,
     body: `${idLabel(id)} · ${expiryText(id.expiry_date)}. Renewing can take a few weeks.`,
-    url: "/trips/ids",
+    url: "/vault",
   };
 }

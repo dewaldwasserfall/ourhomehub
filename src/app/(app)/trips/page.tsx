@@ -173,20 +173,6 @@ export default function TripsPage() {
         </section>
       )}
 
-      {/* Passports and IDs (adults with access) */}
-      {canEdit && (
-        <section className="section">
-          <div className="group">
-            <Link href="/trips/ids" className="row row--link">
-              <span className="row__body">
-                <span className="row__title">Passports and ID cards</span>
-                <span className="row__subtitle">Expiry dates and 1Password links</span>
-              </span>
-              <ChevronRightIcon className="row__chevron" size={16} />
-            </Link>
-          </div>
-        </section>
-      )}
 
       {/* Owner: who can see trips */}
       {isOwner && (

@@ -12,16 +12,29 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useHousehold } from "@/components/household-context";
-import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon } from "@/components/icons";
+import {
+  CheckIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PlusIcon,
+} from "@/components/icons";
 import { Navbar } from "@/components/navbar";
 import { Segmented } from "@/components/segmented";
+
+/** Home (SmartThings automations) is parked; flip to show "Counted by". */
+const HOME_ENABLED = false;
 import { Sheet } from "@/components/sheet";
 import { useToast } from "@/components/toast";
 import { dateKey } from "@/lib/calendar/time";
 import { guessCategory } from "@/lib/categories";
 import { friendlyError } from "@/lib/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import { supplyLevel, taskKey, taskOptions, type TaskOption } from "@/lib/supplies";
+import {
+  supplyLevel,
+  taskKey,
+  taskOptions,
+  type TaskOption,
+} from "@/lib/supplies";
 import { usePlanData } from "@/lib/use-plan-data";
 import { useSupplies, type SupplyWithName } from "@/lib/use-supplies";
 
@@ -44,10 +57,20 @@ export default function SuppliesPage() {
 
   // Step 1: tasks to pick from, grouped (Chores, each routine, each zone).
   const options = useMemo(
-    () => taskOptions({ routines: plan.routines, steps: plan.steps, zones: plan.zones, zoneTasks: plan.zoneTasks, chores: plan.chores }),
+    () =>
+      taskOptions({
+        routines: plan.routines,
+        steps: plan.steps,
+        zones: plan.zones,
+        zoneTasks: plan.zoneTasks,
+        chores: plan.chores,
+      }),
     [plan.routines, plan.steps, plan.zones, plan.zoneTasks, plan.chores],
   );
-  const optionByKey = useMemo(() => new Map(options.map((o) => [taskKey(o.kind, o.id), o])), [options]);
+  const optionByKey = useMemo(
+    () => new Map(options.map((o) => [taskKey(o.kind, o.id), o])),
+    [options],
+  );
   const groups = useMemo(() => {
     const map = new Map<string, TaskOption[]>();
     for (const o of options) map.set(o.group, [...(map.get(o.group) ?? []), o]);
@@ -73,14 +96,26 @@ export default function SuppliesPage() {
     // A new product: assume a full pack is open now.
     setLeft(String(s?.uses_left ?? 40));
     setCountedBy(s?.counted_by ?? "tasks");
-    setLinked(new Set(s ? uses.filter((u) => u.supply_id === s.id).map((u) => taskKey(u.kind, u.task_id)) : []));
+    setLinked(
+      new Set(
+        s
+          ? uses
+              .filter((u) => u.supply_id === s.id)
+              .map((u) => taskKey(u.kind, u.task_id))
+          : [],
+      ),
+    );
     setConfirmDelete(false);
   }, [editing, uses]);
 
   const perPackN = wholeNumber(perPack, 1, 1000);
   const warnAtN = wholeNumber(warnAt, 0, 1000);
   const leftN = wholeNumber(left, 0, 100000);
-  const valid = name.trim().length > 0 && perPackN !== null && warnAtN !== null && leftN !== null;
+  const valid =
+    name.trim().length > 0 &&
+    perPackN !== null &&
+    warnAtN !== null &&
+    leftN !== null;
 
   // Step 3: save: the product (found or created by name), the supply, then
   // the task links (only what changed).
@@ -88,39 +123,70 @@ export default function SuppliesPage() {
     if (!editing || !valid) return;
     setBusy(true);
     try {
-      const { data: itemId, error: itemError } = await supabase.rpc("ensure_item", {
-        p_name: name.trim(),
-        p_category: guessCategory(name.trim()),
-      });
+      const { data: itemId, error: itemError } = await supabase.rpc(
+        "ensure_item",
+        {
+          p_name: name.trim(),
+          p_category: guessCategory(name.trim()),
+        },
+      );
       if (itemError) throw itemError;
 
-      const fields = { item_id: itemId as string, uses_per_pack: perPackN!, warn_at: warnAtN!, uses_left: leftN!, counted_by: countedBy };
+      const fields = {
+        item_id: itemId as string,
+        uses_per_pack: perPackN!,
+        warn_at: warnAtN!,
+        uses_left: leftN!,
+        counted_by: countedBy,
+      };
       let supplyId = editing.supply?.id;
       if (supplyId) {
         // A changed count allows a new suggestion once it runs low again.
-        const recount = editing.supply && leftN !== editing.supply.uses_left ? { suggested_at_uses: null } : {};
-        const { error } = await supabase.from("supplies").update({ ...fields, ...recount }).eq("id", supplyId);
+        const recount =
+          editing.supply && leftN !== editing.supply.uses_left
+            ? { suggested_at_uses: null }
+            : {};
+        const { error } = await supabase
+          .from("supplies")
+          .update({ ...fields, ...recount })
+          .eq("id", supplyId);
         if (error) throw error;
       } else {
-        const { data, error } = await supabase.from("supplies").insert({ household_id: household.id, ...fields }).select("id").single();
+        const { data, error } = await supabase
+          .from("supplies")
+          .insert({ household_id: household.id, ...fields })
+          .select("id")
+          .single();
         if (error) throw error;
         supplyId = (data as { id: string }).id;
       }
 
-      const before = new Set(uses.filter((u) => u.supply_id === supplyId).map((u) => taskKey(u.kind, u.task_id)));
+      const before = new Set(
+        uses
+          .filter((u) => u.supply_id === supplyId)
+          .map((u) => taskKey(u.kind, u.task_id)),
+      );
       const added = [...linked].filter((k) => !before.has(k));
       const removed = [...before].filter((k) => !linked.has(k));
       if (added.length) {
         const rows = added.map((k) => {
           const [kind, task_id] = k.split(":");
-          return { supply_id: supplyId, household_id: household.id, kind, task_id };
+          return {
+            supply_id: supplyId,
+            household_id: household.id,
+            kind,
+            task_id,
+          };
         });
         const { error } = await supabase.from("supply_uses").insert(rows);
         if (error) throw error;
       }
       for (const k of removed) {
         const [kind, taskId] = k.split(":");
-        const { error } = await supabase.from("supply_uses").delete().match({ supply_id: supplyId, kind, task_id: taskId });
+        const { error } = await supabase
+          .from("supply_uses")
+          .delete()
+          .match({ supply_id: supplyId, kind, task_id: taskId });
         if (error) throw error;
       }
       setEditing(null);
@@ -135,7 +201,10 @@ export default function SuppliesPage() {
   async function remove() {
     if (!editing?.supply) return;
     if (!confirmDelete) return setConfirmDelete(true);
-    const { error } = await supabase.from("supplies").delete().eq("id", editing.supply.id);
+    const { error } = await supabase
+      .from("supplies")
+      .delete()
+      .eq("id", editing.supply.id);
     if (error) return void toast.show(friendlyError(error));
     setEditing(null);
     await reload();
@@ -155,14 +224,23 @@ export default function SuppliesPage() {
       <Navbar
         title="Supplies"
         leading={
-          <Link href="/household" className="nav-button" aria-label="Back to Household">
+          <Link
+            href="/household"
+            className="nav-button"
+            aria-label="Back to Household"
+          >
             <ChevronLeftIcon size={22} />
             Household
           </Link>
         }
         trailing={
           meIsAdult ? (
-            <button type="button" className="nav-button nav-button--icon" aria-label="New supply" onClick={() => setEditing({ supply: null })}>
+            <button
+              type="button"
+              className="nav-button nav-button--icon"
+              aria-label="New supply"
+              onClick={() => setEditing({ supply: null })}
+            >
               <PlusIcon size={24} />
             </button>
           ) : undefined
@@ -173,11 +251,16 @@ export default function SuppliesPage() {
         <section className="section">
           <div className="group empty">
             <span className="empty__title">No supplies yet</span>
-            Add things like washing liquid with how many uses a bottle has, and the tasks that use it. When it runs low it&rsquo;s
-            suggested on the shopping list.
+            Add things like washing liquid with how many uses a bottle has, and
+            the tasks that use it. When it runs low it&rsquo;s suggested on the
+            shopping list.
             {meIsAdult && (
               <div style={{ marginTop: 16 }}>
-                <button type="button" className="button button--primary" onClick={() => setEditing({ supply: null })}>
+                <button
+                  type="button"
+                  className="button button--primary"
+                  onClick={() => setEditing({ supply: null })}
+                >
                   New supply
                 </button>
               </div>
@@ -198,20 +281,43 @@ export default function SuppliesPage() {
               const body = (
                 <>
                   <span className="row__body">
-                    <span className="row__title">{s.item?.display_name ?? "Product"}</span>
-                    <span className={`supply-bar supply-bar--${level.state}`} aria-hidden="true">
-                      <span className="supply-bar__fill" style={{ width: `${level.fraction * 100}%` }} />
+                    <span className="row__title">
+                      {s.item?.display_name ?? "Product"}
+                    </span>
+                    <span
+                      className={`supply-bar supply-bar--${level.state}`}
+                      aria-hidden="true"
+                    >
+                      <span
+                        className="supply-bar__fill"
+                        style={{ width: `${level.fraction * 100}%` }}
+                      />
                     </span>
                     <span className="row__subtitle">
-                      <span className={level.state === "ok" ? undefined : "due due--overdue"}>{level.label}</span>
-                      {taskNames.length > 0 ? ` · ${taskNames.join(", ")}` : " · not linked to a task yet"}
+                      <span
+                        className={
+                          level.state === "ok" ? undefined : "due due--overdue"
+                        }
+                      >
+                        {level.label}
+                      </span>
+                      {taskNames.length > 0
+                        ? ` · ${taskNames.join(", ")}`
+                        : " · not linked to a task yet"}
                     </span>
                   </span>
-                  {meIsAdult && <ChevronRightIcon className="row__chevron" size={16} />}
+                  {meIsAdult && (
+                    <ChevronRightIcon className="row__chevron" size={16} />
+                  )}
                 </>
               );
               return meIsAdult ? (
-                <button key={s.id} type="button" className="row row--pressable" onClick={() => setEditing({ supply: s })}>
+                <button
+                  key={s.id}
+                  type="button"
+                  className="row row--pressable"
+                  onClick={() => setEditing({ supply: s })}
+                >
                   {body}
                 </button>
               ) : (
@@ -222,7 +328,8 @@ export default function SuppliesPage() {
             })}
           </div>
           <p className="section__footer">
-            Each tick of a linked task uses one. Ticking it off as bought adds a pack (or as many as the quantity says).
+            Each tick of a linked task uses one. Ticking it off as bought adds a
+            pack (or as many as the quantity says).
           </p>
         </section>
       )}
@@ -232,12 +339,21 @@ export default function SuppliesPage() {
         onClose={() => setEditing(null)}
         title={editing?.supply ? "Supply" : "New supply"}
         leading={
-          <button type="button" className="nav-button" onClick={() => setEditing(null)}>
+          <button
+            type="button"
+            className="nav-button"
+            onClick={() => setEditing(null)}
+          >
             Cancel
           </button>
         }
         trailing={
-          <button type="button" className="nav-button nav-button--strong" onClick={save} disabled={busy || !valid}>
+          <button
+            type="button"
+            className="nav-button nav-button--strong"
+            onClick={save}
+            disabled={busy || !valid}
+          >
             {editing?.supply ? "Done" : "Add"}
           </button>
         }
@@ -260,7 +376,14 @@ export default function SuppliesPage() {
               [
                 ["Uses per pack", perPack, setPerPack, 1000],
                 ["Suggest at", warnAt, setWarnAt, 1000],
-                [editing?.supply ? "Uses left now" : "Uses left now (full pack)", left, setLeft, 100000],
+                [
+                  editing?.supply
+                    ? "Uses left now"
+                    : "Uses left now (full pack)",
+                  left,
+                  setLeft,
+                  100000,
+                ],
               ] as const
             ).map(([label, value, set, max]) => (
               <label key={label} className="form-row">
@@ -280,19 +403,23 @@ export default function SuppliesPage() {
           </div>
 
           {/* How it runs down: ticks on tasks, or Home automations only
-              (so a washer automation and a washing task never both count) */}
-          <Segmented
-            label="Counted by"
-            value={countedBy}
-            onChange={setCountedBy}
-            options={[
-              { value: "tasks", label: "Ticked tasks" },
-              { value: "automations", label: "Automations" },
-            ]}
-          />
-          {countedBy === "automations" && (
+              (so a washer automation and a washing task never both count).
+              Hidden while Home is parked; the saved value is kept. */}
+          {HOME_ENABLED && (
+            <Segmented
+              label="Counted by"
+              value={countedBy}
+              onChange={setCountedBy}
+              options={[
+                { value: "tasks", label: "Ticked tasks" },
+                { value: "automations", label: "Automations" },
+              ]}
+            />
+          )}
+          {HOME_ENABLED && countedBy === "automations" && (
             <p className="section__footer" style={{ marginTop: -6 }}>
-              Ticking the tasks below won&rsquo;t use it up; a Home automation (for example &ldquo;washer finished&rdquo;) does.
+              Ticking the tasks below won&rsquo;t use it up; a Home automation
+              (for example &ldquo;washer finished&rdquo;) does.
             </p>
           )}
 
@@ -300,7 +427,11 @@ export default function SuppliesPage() {
           <div className="section__header" style={{ padding: "0 4px" }}>
             <span className="section__header-title">Used by</span>
           </div>
-          {groups.length === 0 && <p className="section__footer">Add a routine step, zone task or chore first.</p>}
+          {groups.length === 0 && (
+            <p className="section__footer">
+              Add a routine step, zone task or chore first.
+            </p>
+          )}
           {groups.map(([group, tasks]) => (
             <div key={group} className="group">
               <div className="row supply-task-group">
@@ -310,11 +441,20 @@ export default function SuppliesPage() {
                 const key = taskKey(t.kind, t.id);
                 const on = linked.has(key);
                 return (
-                  <button key={key} type="button" className="row row--pressable" role="checkbox" aria-checked={on} onClick={() => toggle(key)}>
+                  <button
+                    key={key}
+                    type="button"
+                    className="row row--pressable"
+                    role="checkbox"
+                    aria-checked={on}
+                    onClick={() => toggle(key)}
+                  >
                     <span className="row__body">
                       <span className="row__title">{t.title}</span>
                     </span>
-                    {on && <CheckIcon size={18} className="supply-task-check" />}
+                    {on && (
+                      <CheckIcon size={18} className="supply-task-check" />
+                    )}
                   </button>
                 );
               })}
@@ -322,7 +462,11 @@ export default function SuppliesPage() {
           ))}
 
           {editing?.supply && (
-            <button type="button" className="button button--danger" onClick={remove}>
+            <button
+              type="button"
+              className="button button--danger"
+              onClick={remove}
+            >
               {confirmDelete ? "Tap again to stop tracking" : "Stop tracking"}
             </button>
           )}

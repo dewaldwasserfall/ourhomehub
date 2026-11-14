@@ -28,10 +28,11 @@ import {
   RoutineIcon,
   StarIcon,
   SunIcon,
+  VaultIcon,
   WalletIcon,
   ZoneIcon,
 } from "./icons";
-import { canSeeFinances, canSeeTrips, roleLabel } from "@/lib/roles";
+import { canSeeFinances, canSeeTrips, canSeeVault, roleLabel } from "@/lib/roles";
 
 const STARS = { href: "/stars", label: "Stars" };
 
@@ -84,6 +85,11 @@ export function Sidebar() {
       {/* Step 3a-2: trips (people the owner gave access) */}
       {canSeeTrips(me) && (
         <div className="sidebar__group">{link("/trips", "Trips", SuitcaseIcon, pathname.startsWith("/trips"))}</div>
+      )}
+
+      {/* Step 3a-3: the Vault: passports and ID cards (same access as editing trips) */}
+      {canSeeVault(me) && (
+        <div className="sidebar__group">{link("/vault", "Vault", VaultIcon, pathname.startsWith("/vault"))}</div>
       )}
 
       {/* Step 3b: stars (when the household has children) */}
