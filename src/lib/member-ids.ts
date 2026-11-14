@@ -1,6 +1,7 @@
 /**
- * Passports and ID cards: pure helpers for expiry warnings and reminders.
- * HomeHub only knows the expiry date and the 1Password link; the numbers
+ * Vault documents (passports, ID cards, driving licences): pure helpers for
+ * expiry warnings and reminders. HomeHub only knows the expiry date, the
+ * details printed on the document and the 1Password link; the numbers, BSN
  * and scans stay in 1Password.
  *
  *   * idLabel()          – "Passport (Netherlands)"
@@ -14,8 +15,17 @@ import type { MemberId, Trip, TripParticipant } from "./types";
 
 const SIX_MONTHS_DAYS = 183;
 
-export const idLabel = (id: Pick<MemberId, "kind" | "country">) =>
-  `${id.kind === "passport" ? "Passport" : "ID card"}${id.country ? ` (${id.country})` : ""}`;
+/** Display names per kind ("Rijbewijs" is what the family calls it). */
+export const KIND_LABELS: Record<MemberId["kind"], string> = {
+  passport: "Passport",
+  id_card: "ID card",
+  drivers_license: "Rijbewijs",
+};
+
+/** Passports and ID cards count for travel; a driving licence doesn't. */
+export const isTravelDocument = (id: Pick<MemberId, "kind">) => id.kind !== "drivers_license";
+
+export const idLabel = (id: Pick<MemberId, "kind" | "country">) => `${KIND_LABELS[id.kind]}${id.country ? ` (${id.country})` : ""}`;
 
 const longDate = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 export const expiryText = (date: string) => longDate.format(new Date(`${date}T12:00:00Z`));
@@ -51,6 +61,8 @@ export interface TripIdWarning {
  * household has a document recorded, so a fresh setup isn't all warnings).
  */
 export function tripIdWarnings(trip: Pick<Trip, "end_date">, participants: TripParticipant[], ids: MemberId[]): TripIdWarning[] {
+  // Only travel documents matter here (a rijbewijs doesn't get you across a border).
+  ids = ids.filter(isTravelDocument);
   if (ids.length === 0) return [];
   const sixMonthsAfter = addDays(trip.end_date, SIX_MONTHS_DAYS);
   const warnings: TripIdWarning[] = [];
@@ -93,7 +105,7 @@ export function idReminder(
   if (!step) return null;
   return {
     key: `id:${id.id}:${id.expiry_date}:${step.days}`,
-    title: `${name}'s ${id.kind === "passport" ? "passport" : "ID card"} expires ${step.label}`,
+    title: `${name}'s ${id.kind === "id_card" ? "ID card" : KIND_LABELS[id.kind].toLowerCase()} expires ${step.label}`,
     body: `${idLabel(id)} · ${expiryText(id.expiry_date)}. Renewing can take a few weeks.`,
     url: "/vault",
   };

@@ -1,5 +1,5 @@
 /**
- * Vault: passports and ID cards (its own tab; grown-ups with Trips access,
+ * Vault: passports, ID cards and driving licences (its own tab; grown-ups with Trips access,
  * the same rule as the member_ids policy).
  *
  * HomeHub keeps what's on the document's info page except the number:
@@ -132,7 +132,7 @@ export default function IdsPage() {
               })}
               <button type="button" className="row row--pressable trip-add-row" onClick={() => setEditing({ id: null, memberId: m.id })}>
                 <PlusIcon size={18} />
-                <span className="row__body">Add passport or ID card</span>
+                <span className="row__body">Add a document</span>
               </button>
             </div>
           </section>
@@ -226,6 +226,7 @@ function IdSheet({
           options={[
             { value: "passport", label: "Passport" },
             { value: "id_card", label: "ID card" },
+            { value: "drivers_license", label: "Rijbewijs" },
           ]}
         />
         <input

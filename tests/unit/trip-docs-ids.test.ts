@@ -93,3 +93,16 @@ describe("Booking.com and check-in", () => {
     expect(checkinReminder(trip, stays, "2027-06-29")).toBeNull();
   });
 });
+
+describe("driving licences in the Vault", () => {
+  it("labels them Rijbewijs and leaves them out of trip warnings", async () => {
+    const { idLabel, tripIdWarnings } = await import("@/lib/member-ids");
+    const licence = id("dewald", "2030-01-01", "drivers_license");
+    expect(idLabel(licence)).toBe("Rijbewijs (Netherlands)");
+    // Only a rijbewijs recorded: no travel document, so no warning list at all.
+    expect(tripIdWarnings({ end_date: "2027-01-10" }, [{ member_id: "dewald" } as never], [licence])).toEqual([]);
+    // A rijbewijs never stands in for an expiring passport.
+    const warnings = tripIdWarnings({ end_date: "2027-01-10" }, [{ member_id: "dewald" } as never], [licence, id("dewald", "2027-01-05")]);
+    expect(warnings[0]?.problem).toBe("expires_during");
+  });
+});

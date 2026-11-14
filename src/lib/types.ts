@@ -386,12 +386,12 @@ export interface TripDocument {
   created_at: string;
 }
 
-/** Passport or ID card: expiry and the 1Password link, never the number. */
+/** Passport, ID card or driving licence: expiry and the 1Password link, never the number (or BSN). */
 export interface MemberId {
   id: string;
   household_id: string;
   member_id: string;
-  kind: "passport" | "id_card";
+  kind: "passport" | "id_card" | "drivers_license";
   country: string;
   expiry_date: string;
   onepassword_url: string | null;

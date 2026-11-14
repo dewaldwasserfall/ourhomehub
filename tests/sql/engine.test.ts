@@ -157,6 +157,7 @@ beforeAll(async () => {
     "20261114000400_member_ids_details.sql",
     "20261114000500_family_board.sql",
     "20261114000600_smartthings.sql",
+    "20261114000700_member_ids_rijbewijs.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -1335,6 +1336,10 @@ describe("trip documents and IDs", () => {
     await expect(
       db.query(`insert into public.member_ids (member_id, kind, expiry_date, issue_date) values ($1, 'passport', '2030-01-01', '2031-01-01')`, [kid]),
     ).rejects.toThrow(/member_ids_issue_before_expiry/);
+
+    // Driving licences are a kind of their own; anything else is refused.
+    await db.query(`insert into public.member_ids (member_id, kind, country, expiry_date) values ($1, 'drivers_license', 'Netherlands', '2034-03-01')`, [kid]);
+    await expect(db.query(`insert into public.member_ids (member_id, kind, expiry_date) values ($1, 'bsn', '2034-03-01')`, [kid])).rejects.toThrow(/member_ids_kind_check/);
 
     // The kid (Trips access, read-only) sees neither.
     await actAs("kid");
