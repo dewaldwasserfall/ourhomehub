@@ -377,5 +377,9 @@ export interface MemberId {
   country: string;
   expiry_date: string;
   onepassword_url: string | null;
+  /** Full name exactly as printed on the document. */
+  holder_name: string;
+  issue_date: string | null;
+  place_of_issue: string;
   created_at: string;
 }

@@ -9,7 +9,7 @@ import { bookingSearchUrl, checkinReminder, firstGap } from "@/lib/trips";
 import type { MemberId, TripParticipant, TripStay } from "@/lib/types";
 
 const id = (member_id: string, expiry_date: string, kind: MemberId["kind"] = "passport"): MemberId =>
-  ({ id: `${member_id}-${kind}`, household_id: "h", member_id, kind, country: "Netherlands", expiry_date, onepassword_url: null, created_at: "" }) as MemberId;
+  ({ id: `${member_id}-${kind}`, household_id: "h", member_id, kind, country: "Netherlands", expiry_date, onepassword_url: null, holder_name: "", issue_date: null, place_of_issue: "", created_at: "" }) as MemberId;
 const p = (member_id: string) => ({ trip_id: "t", household_id: "h", member_id, join_date: null, leave_date: null }) as TripParticipant;
 
 describe("passport and ID expiry", () => {

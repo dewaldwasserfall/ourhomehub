@@ -152,6 +152,7 @@ beforeAll(async () => {
     "20261114000100_trips.sql",
     "20261114000200_trip_packing_budget.sql",
     "20261114000300_trip_documents_ids.sql",
+    "20261114000400_member_ids_details.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -1321,6 +1322,15 @@ describe("trip documents and IDs", () => {
     await expect(
       db.query(`insert into public.member_ids (member_id, kind, expiry_date, onepassword_url) values ($1, 'passport', '2031-01-01', 'NL1234567')`, [kid]),
     ).rejects.toThrow();
+
+    // The details from the info page; an issue date after expiry is refused.
+    await db.query(
+      `insert into public.member_ids (member_id, kind, country, expiry_date, holder_name, issue_date, place_of_issue) values ($1, 'passport', 'South Africa', '2030-11-25', 'Test Kid', '2020-11-26', 'South Africa')`,
+      [kid],
+    );
+    await expect(
+      db.query(`insert into public.member_ids (member_id, kind, expiry_date, issue_date) values ($1, 'passport', '2030-01-01', '2031-01-01')`, [kid]),
+    ).rejects.toThrow(/member_ids_issue_before_expiry/);
 
     // The kid (Trips access, read-only) sees neither.
     await actAs("kid");

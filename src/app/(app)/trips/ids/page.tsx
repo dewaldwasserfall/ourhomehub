@@ -1,9 +1,10 @@
 /**
  * Passports and ID cards (adults with Trips access).
  *
- * HomeHub keeps only what it needs for reminders: which document, issuing
- * country, expiry date, and a link to the item in 1Password. The number and
- * scan stay in 1Password: "Open in 1Password" goes straight to them.
+ * HomeHub keeps what's on the document's info page except the number:
+ * which document, issuing country, name as printed, issue date and place,
+ * expiry date, and a link to the item in 1Password. The number and scan
+ * stay in 1Password: "Open in 1Password" goes straight to them.
  *
  * Expiry warnings: red when expired, orange within 6 months. Reminders go
  * out 6, 3 and 1 month before (notification settings).
@@ -28,6 +29,9 @@ import type { MemberId } from "@/lib/types";
 import { useMemberIds } from "@/lib/use-trips";
 
 type Editing = { id: MemberId | null; memberId: string } | null;
+
+/** Everything the sheet edits (all of member_ids except keys and timestamps). */
+type IdFields = Pick<MemberId, "kind" | "country" | "expiry_date" | "onepassword_url" | "holder_name" | "issue_date" | "place_of_issue">;
 
 export default function IdsPage() {
   const supabase = getSupabaseBrowserClient();
@@ -59,13 +63,20 @@ export default function IdsPage() {
     );
   }
 
-  async function save(fields: Pick<MemberId, "kind" | "country" | "expiry_date" | "onepassword_url">) {
+  async function save(fields: IdFields) {
     if (!editing) return false;
     const { error } = editing.id
       ? await supabase.from("member_ids").update(fields).eq("id", editing.id.id)
       : await supabase.from("member_ids").insert({ member_id: editing.memberId, ...fields });
     if (error) {
-      toast.show(error.message.includes("onepassword_url") ? "The 1Password link should start with https:// or onepassword://" : friendlyError(error));
+      // Step: turn the two check constraints into plain-language messages.
+      toast.show(
+        error.message.includes("onepassword_url")
+          ? "The 1Password link should start with https:// or onepassword://"
+          : error.message.includes("issue_before_expiry")
+            ? "The issue date should be before the expiry date"
+            : friendlyError(error),
+      );
       return false;
     }
     await reload();
@@ -103,6 +114,19 @@ export default function IdsPage() {
                           {status.state === "expired" ? "Expired " : "Valid until "}
                           {expiryText(i.expiry_date)}
                         </span>
+                        {/* Step: name as printed, plus where and when it was issued, if known. */}
+                        {(i.holder_name || i.issue_date || i.place_of_issue) && (
+                          <span className="row__subtitle">
+                            {[
+                              i.holder_name,
+                              i.issue_date || i.place_of_issue
+                                ? `Issued${i.issue_date ? ` ${expiryText(i.issue_date)}` : ""}${i.place_of_issue ? ` in ${i.place_of_issue}` : ""}`
+                                : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </span>
+                        )}
                       </span>
                     </button>
                     {i.onepassword_url && (
@@ -144,13 +168,16 @@ function IdSheet({
   editing: Editing;
   name: string;
   onClose: () => void;
-  onSave: (fields: Pick<MemberId, "kind" | "country" | "expiry_date" | "onepassword_url">) => Promise<boolean>;
+  onSave: (fields: IdFields) => Promise<boolean>;
   onDelete: () => void;
 }) {
   const [kind, setKind] = useState<MemberId["kind"]>("passport");
   const [country, setCountry] = useState("");
   const [expiry, setExpiry] = useState("");
   const [link, setLink] = useState("");
+  const [holder, setHolder] = useState("");
+  const [issued, setIssued] = useState("");
+  const [place, setPlace] = useState("");
   const [confirm, setConfirm] = useState(false);
   const [last, setLast] = useState<Editing>(null);
   if (editing !== last) {
@@ -160,13 +187,26 @@ function IdSheet({
       setCountry(editing.id?.country ?? "");
       setExpiry(editing.id?.expiry_date ?? "");
       setLink(editing.id?.onepassword_url ?? "");
+      setHolder(editing.id?.holder_name ?? "");
+      setIssued(editing.id?.issue_date ?? "");
+      setPlace(editing.id?.place_of_issue ?? "");
       setConfirm(false);
     }
   }
   const linkOk = !link.trim() || /^(https:\/\/|onepassword:\/\/)/.test(link.trim());
-  const valid = Boolean(expiry) && linkOk;
+  // Step: an issue date must come before the expiry date (the database checks too).
+  const datesOk = !issued || !expiry || issued < expiry;
+  const valid = Boolean(expiry) && linkOk && datesOk;
   const save = async () => {
-    if (valid && (await onSave({ kind, country: country.trim(), expiry_date: expiry, onepassword_url: link.trim() || null }))) onClose();
+    if (valid && (await onSave({
+        kind,
+        country: country.trim(),
+        expiry_date: expiry,
+        onepassword_url: link.trim() || null,
+        holder_name: holder.trim(),
+        issue_date: issued || null,
+        place_of_issue: place.trim(),
+      }))) onClose();
   };
 
   return (
@@ -203,12 +243,38 @@ function IdSheet({
           onChange={(e) => setCountry(e.target.value)}
           maxLength={80}
         />
+        <input
+          className="input"
+          aria-label="Name on document"
+          placeholder="Full name as printed"
+          value={holder}
+          onChange={(e) => setHolder(e.target.value)}
+          maxLength={120}
+          autoCapitalize="words"
+        />
         <div className="group">
+          <label className="form-row">
+            <span className="form-row__label">Issued</span>
+            <input type="date" className="pill-input" style={{ width: 150 }} value={issued} onChange={(e) => setIssued(e.target.value)} />
+          </label>
           <label className="form-row">
             <span className="form-row__label">Valid until</span>
             <input type="date" className="pill-input" style={{ width: 150 }} value={expiry} onChange={(e) => setExpiry(e.target.value)} />
           </label>
         </div>
+        {!datesOk && (
+          <p className="form-error" role="alert" style={{ margin: 0 }}>
+            The issue date should be before the expiry date.
+          </p>
+        )}
+        <input
+          className="input"
+          aria-label="Place of issue"
+          placeholder="Place of issue (optional)"
+          value={place}
+          onChange={(e) => setPlace(e.target.value)}
+          maxLength={80}
+        />
         <div>
           <span className="field__label">1Password link</span>
           <input
