@@ -59,6 +59,41 @@ export function MemberChips({
   );
 }
 
+/** Several people (e.g. who's going on a trip). */
+export function MembersPicker({
+  members,
+  value,
+  onChange,
+  label,
+}: {
+  members: Member[];
+  value: string[];
+  onChange: (memberIds: string[]) => void;
+  label: string;
+}) {
+  const toggle = (id: string) => onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
+  return (
+    <div>
+      <span className="field__label">{label}</span>
+      <div className="chip-grid" role="group" aria-label={label}>
+        {members.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            className="chip chip--person"
+            style={personAccentStyle(m.theme_accent)}
+            aria-pressed={value.includes(m.id)}
+            onClick={() => toggle(m.id)}
+          >
+            <Avatar member={m} size="mini" />
+            {m.display_name.split(" ")[0]}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // -----------------------------------------------------------------------------
 // Step 2: weekdays (none selected = every day)
 // -----------------------------------------------------------------------------

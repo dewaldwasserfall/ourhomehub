@@ -149,6 +149,7 @@ beforeAll(async () => {
     "20261113001400_weekly_review.sql",
     "20261113001500_supplies.sql",
     "20261113001600_done_for.sql",
+    "20261114000100_trips.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -1199,5 +1200,54 @@ describe("done for", () => {
 
     // The star goes to the kid.
     expect(await stars()).toBe(before + 1);
+  });
+});
+
+describe("trips", () => {
+  it("are private to the people the owner chooses; children only read", async () => {
+    await actAs("dewald");
+    const memberOf = async (u: UserKey) =>
+      (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS[u].id])).id;
+    const partner = await memberOf("partner");
+    const kid = await memberOf("kid");
+
+    // The owner plans a trip with a stay, a plan and who's going.
+    const trip = (
+      await one<{ id: string }>(
+        `insert into public.trips (household_id, name, destination, start_date, end_date) values ($1, 'Spain', 'Costa Brava', '2030-07-01', '2030-07-10') returning id`,
+        [householdId],
+      )
+    ).id;
+    await db.query(`insert into public.trip_participants (trip_id, member_id) values ($1, $2)`, [trip, kid]);
+    await db.query(`insert into public.trip_stays (trip_id, name, check_in, check_out) values ($1, 'Casa Mar', '2030-07-01', '2030-07-10')`, [trip]);
+    await db.query(`insert into public.trip_plans (trip_id, day, time, title) values ($1, '2030-07-01', '07:30', 'Flight to Girona')`, [trip]);
+    // household_id was filled from the trip.
+    expect((await one<{ h: string }>(`select household_id as h from public.trip_plans where trip_id = $1`, [trip])).h).toBe(householdId);
+
+    // Another adult without access sees nothing and can't add.
+    await actAs("partner");
+    expect(await all(`select id from public.trips`)).toHaveLength(0);
+    expect(await all(`select * from public.trip_stays`)).toHaveLength(0);
+    await expect(
+      db.query(`insert into public.trips (household_id, name, start_date, end_date) values ($1, 'Mine', '2030-01-01', '2030-01-02')`, [householdId]),
+    ).rejects.toThrow();
+    // ...and can't give herself access.
+    await expect(db.query(`update public.members set can_see_trips = true where id = $1`, [partner])).rejects.toThrow(/owner_only/);
+    await expect(db.query(`select public.set_trips_access($1, true)`, [partner])).rejects.toThrow(/owner_only/);
+
+    // The owner gives the kid access: they read, but can't change.
+    await actAs("dewald");
+    await db.query(`select public.set_trips_access($1, true)`, [kid]);
+    await actAs("kid");
+    expect(await all(`select id from public.trips`)).toHaveLength(1);
+    expect(await all(`select id from public.trip_plans`)).toHaveLength(1);
+    const changed = await db.query(`update public.trips set name = 'Hacked' where id = $1`, [trip]);
+    expect(changed.affectedRows).toBe(0);
+
+    // Bad dates are refused.
+    await actAs("dewald");
+    await expect(
+      db.query(`insert into public.trip_stays (trip_id, name, check_in, check_out) values ($1, 'Oops', '2030-07-05', '2030-07-05')`, [trip]),
+    ).rejects.toThrow();
   });
 });

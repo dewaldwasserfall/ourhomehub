@@ -23,6 +23,7 @@ import {
   HomeIcon,
   ListsIcon,
   ReviewIcon,
+  SuitcaseIcon,
   RhythmIcon,
   RoutineIcon,
   StarIcon,
@@ -30,7 +31,7 @@ import {
   WalletIcon,
   ZoneIcon,
 } from "./icons";
-import { canSeeFinances, roleLabel } from "@/lib/roles";
+import { canSeeFinances, canSeeTrips, roleLabel } from "@/lib/roles";
 
 const STARS = { href: "/stars", label: "Stars" };
 
@@ -78,6 +79,11 @@ export function Sidebar() {
       {/* Step 3a: week review (adults) */}
       {meIsAdult && (
         <div className="sidebar__group">{link("/review", "Week review", ReviewIcon, pathname.startsWith("/review"))}</div>
+      )}
+
+      {/* Step 3a-2: trips (people the owner gave access) */}
+      {canSeeTrips(me) && (
+        <div className="sidebar__group">{link("/trips", "Trips", SuitcaseIcon, pathname.startsWith("/trips"))}</div>
       )}
 
       {/* Step 3b: stars (when the household has children) */}

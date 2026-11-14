@@ -25,6 +25,16 @@ export function canSeeFinances(member: Pick<Member, "role" | "can_see_finances">
   return member.role === "owner" || (member.role === "adult" && member.can_see_finances);
 }
 
+/** Sees Trips: the owner always, anyone else the owner chose. */
+export function canSeeTrips(member: Pick<Member, "role" | "can_see_trips">): boolean {
+  return member.role === "owner" || Boolean(member.can_see_trips);
+}
+
+/** Changes Trips: adults with access (children only ever read). */
+export function canEditTrips(member: Pick<Member, "role" | "can_see_trips">): boolean {
+  return canSeeTrips(member) && isAdult(member);
+}
+
 /** "Owner", "Adult" or "Child", for the Household screen. */
 export function roleLabel(role: Member["role"]): string {
   return role === "owner" ? "Owner" : role === "child" ? "Child" : "Adult";

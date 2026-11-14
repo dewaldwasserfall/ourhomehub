@@ -50,6 +50,8 @@ export interface Member {
   theme_mode: "system" | "light" | "dark";
   /** Sees the grocery budget (owner-granted; never children). */
   can_see_finances: boolean;
+  /** Sees Trips (set by the owner; children read-only). */
+  can_see_trips: boolean;
   created_at: string;
 }
 
@@ -234,5 +236,68 @@ export interface SupplyUse {
   household_id: string;
   kind: CompletionKind;
   task_id: string;
+  created_at: string;
+}
+
+// -----------------------------------------------------------------------------
+// Trips
+// -----------------------------------------------------------------------------
+
+export interface TripEmergency {
+  embassy?: string;
+  insurance_policy?: string;
+  insurance_phone?: string;
+  contacts?: string;
+  notes?: string;
+}
+
+export interface Trip {
+  id: string;
+  household_id: string;
+  name: string;
+  destination: string;
+  start_date: string;
+  end_date: string;
+  notes: string;
+  home_currency: string;
+  planned_budget_cents: number | null;
+  emergency: TripEmergency;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface TripParticipant {
+  trip_id: string;
+  household_id: string;
+  member_id: string;
+  /** Null = from the start of the trip. */
+  join_date: string | null;
+  /** Null = until the end of the trip. */
+  leave_date: string | null;
+}
+
+export interface TripStay {
+  id: string;
+  trip_id: string;
+  household_id: string;
+  name: string;
+  location: string;
+  check_in: string;
+  /** The morning you leave: the last night is the day before. */
+  check_out: string;
+  booking_ref: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface TripPlan {
+  id: string;
+  trip_id: string;
+  household_id: string;
+  day: string;
+  /** "07:30:00" or null for no particular time. */
+  time: string | null;
+  title: string;
+  details: string;
   created_at: string;
 }

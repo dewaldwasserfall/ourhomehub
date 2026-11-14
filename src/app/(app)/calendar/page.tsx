@@ -19,6 +19,9 @@ import { Navbar } from "@/components/navbar";
 import { Segmented } from "@/components/segmented";
 import { useToast } from "@/components/toast";
 import { expandForRange, groupByDay } from "@/lib/calendar/expand";
+import { canSeeTrips } from "@/lib/roles";
+import { tripPhase, tripsOnDay } from "@/lib/trips";
+import { useTrips } from "@/lib/use-trips";
 import { addDays, dateKey, timeKey } from "@/lib/calendar/time";
 import type { EventInput, Occurrence } from "@/lib/calendar/types";
 import { useCalendar } from "@/lib/calendar/use-calendar";
@@ -39,6 +42,9 @@ const monthYear = fmt({ month: "long", year: "numeric" });
 
 export default function CalendarPage() {
   const { household, me, memberByUserId, members, meIsAdult } = useHousehold();
+  // Trips show as all-day bars, only for people the owner gave access
+  // (they're never written to Google, so nobody else sees them).
+  const { trips } = useTrips(household.id, canSeeTrips(me));
   const tz = household.timezone;
   const { rows, status, loading, syncing, sync, createEvent, updateEvent, deleteEvent } = useCalendar(household.id);
   const toast = useToast();
@@ -62,8 +68,14 @@ export default function CalendarPage() {
   // ---------------------------------------------------------------------------
   const agendaDays = useMemo(() => {
     const end = addDays(today, AGENDA_DAYS - 1);
-    return groupByDay(expandForRange(rows, today, end, tz), today, end);
-  }, [rows, today, tz]);
+    const byDay = groupByDay(expandForRange(rows, today, end, tz), today, end);
+    // A trip's first day always gets a heading, even with no events that day
+    // (the trip bar then shows on every listed day it covers).
+    for (const t of trips) {
+      if (t.start_date >= today && t.start_date <= end && !byDay.has(t.start_date)) byDay.set(t.start_date, []);
+    }
+    return byDay;
+  }, [rows, today, tz, trips]);
 
   const monthGrid = useMemo(() => {
     // Monday-start grid covering the whole month.
@@ -106,6 +118,25 @@ export default function CalendarPage() {
   // ---------------------------------------------------------------------------
   const dayLabel = (key: string) =>
     key === today ? "Today" : key === addDays(today, 1) ? "Tomorrow" : weekdayName.format(noon(key));
+
+  /** A trip covering this day: a bar linking to the trip. */
+  const tripRows = (day: string) =>
+    tripsOnDay(trips, day).map((t) => {
+      const phase = tripPhase(t, day);
+      return (
+        <Link key={`trip-${t.id}-${day}`} href={`/trips/${t.id}`} className="row row--link event-row trip-event">
+          <span className="event-row__time">Trip</span>
+          <span className="event-row__bar event-row__bar--allday trip-event__bar" aria-hidden="true" />
+          <span className="row__body">
+            <span className="row__title">{t.name}</span>
+            <span className="event-row__meta">
+              {phase.phase === "ongoing" ? phase.label : ""}
+              {t.destination && `${phase.phase === "ongoing" ? " · " : ""}${t.destination}`}
+            </span>
+          </span>
+        </Link>
+      );
+    });
 
   const eventRow = (occ: Occurrence, day: string) => {
     const addedBy = occ.row.added_by_member ? memberById.get(occ.row.added_by_member) : undefined;
@@ -239,7 +270,8 @@ export default function CalendarPage() {
                     <span className="agenda-day__date">{dayMonth.format(noon(today))}</span>
                   </div>
                   <div className="group">
-                    <div className="empty-day">Nothing planned</div>
+                    {tripRows(today)}
+                    {tripsOnDay(trips, today).length === 0 && <div className="empty-day">Nothing planned</div>}
                   </div>
                 </section>
               )}
@@ -251,7 +283,10 @@ export default function CalendarPage() {
                       <span className="agenda-day__name">{dayLabel(day)}</span>
                       <span className="agenda-day__date">{dayMonth.format(noon(day))}</span>
                     </div>
-                    <div className="group">{list.map((occ) => eventRow(occ, day))}</div>
+                    <div className="group">
+                      {tripRows(day)}
+                      {list.map((occ) => eventRow(occ, day))}
+                    </div>
                   </section>
                 ))}
               <p className="section__footer" style={{ marginTop: 24 }}>
@@ -293,8 +328,10 @@ export default function CalendarPage() {
                     ))}
                     {monthGrid.cells.map((day) => {
                       const count = monthGrid.byDay.get(day)?.length ?? 0;
+                      const onTrip = tripsOnDay(trips, day).length > 0;
                       const classes = [
                         "month__day",
+                        onTrip && "month__day--trip",
                         !day.startsWith(month) && "month__day--outside",
                         day === today && "month__day--today",
                       ]
@@ -332,8 +369,12 @@ export default function CalendarPage() {
                 <div className="group">
                   {(() => {
                     const list = groupByDay(expandForRange(rows, selectedDay, selectedDay, tz), selectedDay, selectedDay).get(selectedDay);
-                    return list?.length ? (
-                      list.map((occ) => eventRow(occ, selectedDay))
+                    const tripsToday = tripRows(selectedDay);
+                    return list?.length || tripsToday.length ? (
+                      <>
+                        {tripsToday}
+                        {list?.map((occ) => eventRow(occ, selectedDay))}
+                      </>
                     ) : !meIsAdult ? (
                       <div className="row" style={{ color: "var(--ink-2)" }}>
                         <span className="row__body">Nothing on this day</span>

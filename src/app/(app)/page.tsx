@@ -35,6 +35,7 @@ import { useCalendar } from "@/lib/calendar/use-calendar";
 import { friendlyError } from "@/lib/errors";
 import { choreDueOn, describeDay, MODE_LABELS, stepApplies, TIME_OF_DAY_LABELS, timeOfDayAt, zoneFortnight } from "@/lib/plan";
 import { BudgetBar, statusText } from "@/components/budget-bar";
+import { TodayTrip } from "@/components/today-trip";
 import { euros } from "@/lib/budget";
 import { binColour, binList, binsAround } from "@/lib/bins";
 import { useBudget } from "@/lib/use-budget";
@@ -533,6 +534,9 @@ export default function TodayPage() {
           </section>
         );
       })()}
+
+      {/* A trip that's on, or starting within a week (people with access) */}
+      <TodayTrip today={today} />
 
       {/* Sunday: a nudge to look back at the week (adults) */}
       {!isChild && isReviewDay(today) && (

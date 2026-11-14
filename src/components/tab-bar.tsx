@@ -1,12 +1,15 @@
 /**
- * Bottom tab bar: Today, Lists, Calendar, Household. Frosted, fixed,
- * safe-area aware. Rhythms lives inside Lists, so its tab lights up Lists.
+ * Bottom tab bar: Today, Lists, Calendar, (Trips,) Household. Frosted,
+ * fixed, safe-area aware. Rhythms lives inside Lists, so its tab lights up
+ * Lists. Trips only shows for people the owner gave access.
  */
 "use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CalendarIcon, HomeIcon, ListsIcon, SunIcon } from "./icons";
+import { canSeeTrips } from "@/lib/roles";
+import { useHousehold } from "./household-context";
+import { CalendarIcon, HomeIcon, ListsIcon, SuitcaseIcon, SunIcon } from "./icons";
 
 const TABS = [
   { href: "/", label: "Today", Icon: SunIcon, match: (p: string) => p === "/" },
@@ -17,16 +20,19 @@ const TABS = [
     match: (p: string) => p.startsWith("/lists") || p.startsWith("/rhythms"),
   },
   { href: "/calendar", label: "Calendar", Icon: CalendarIcon, match: (p: string) => p.startsWith("/calendar") },
+  { href: "/trips", label: "Trips", Icon: SuitcaseIcon, match: (p: string) => p.startsWith("/trips") },
   { href: "/household", label: "Household", Icon: HomeIcon, match: (p: string) => p.startsWith("/household") },
 ];
 
 export function TabBar() {
   const pathname = usePathname();
+  const { me } = useHousehold();
+  const tabs = TABS.filter((t) => t.href !== "/trips" || canSeeTrips(me));
 
   return (
     <nav className="tabbar" aria-label="Main">
       <div className="tabbar__inner">
-        {TABS.map(({ href, label, Icon, match }) => (
+        {tabs.map(({ href, label, Icon, match }) => (
           <Link
             key={href}
             href={href}

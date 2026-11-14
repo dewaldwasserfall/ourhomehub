@@ -298,3 +298,11 @@ export const SupplyIcon = (p: IconProps) => (
     <path d="M8 13h8" />
   </Svg>
 );
+
+/** Trips: a suitcase */
+export const SuitcaseIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3.5" y="7" width="17" height="12.5" rx="2.5" />
+    <path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7M8 7v12.5M16 7v12.5" />
+  </Svg>
+);

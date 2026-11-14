@@ -697,7 +697,9 @@ img {
   margin: 0 auto;
   height: var(--tabbar-h);
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* Four tabs, or five with Trips: equal columns either way. */
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
 }
 
 .tabbar__item {
@@ -2396,4 +2398,109 @@ textarea.input {
   .supply-bar__fill {
     transition: none;
   }
+}
+
+/* --------------------------------------------------------------------------
+   Trips
+   -------------------------------------------------------------------------- */
+
+/* The list: who's going as a row of small avatars. */
+.trip-row__people {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+/* "In 12 days" / "Day 3 of 10" */
+.trip-badge {
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: var(--fill);
+  color: var(--ink-2);
+}
+
+.trip-badge--ongoing {
+  background: var(--accent);
+  color: #fff;
+}
+
+.trip-warning {
+  color: #ff9500;
+}
+
+.trip-add-icon {
+  color: var(--accent);
+}
+
+.trip-multiline {
+  white-space: pre-line;
+}
+
+/* Days: a narrow left column for the time ("07:30", "In", "Out"). */
+.trip-time {
+  flex: 0 0 44px;
+  align-self: flex-start;
+  padding-top: 1px;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+}
+
+.trip-night .row__subtitle {
+  font-style: italic;
+}
+
+.trip-add-row {
+  color: var(--accent);
+}
+
+.trip-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.trip-actions .button {
+  flex: 1;
+}
+
+/* Calendar: trips get their own colour bar and a stripe on month cells. */
+.trip-event__bar {
+  background: #30b0c7;
+}
+
+.month__day--trip {
+  box-shadow: inset 0 -3px 0 #30b0c7;
+}
+
+/* Today */
+.today-trip {
+  display: block;
+  padding: 12px 16px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.today-trip__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.today-trip__icon {
+  background: #30b0c7;
+}
+
+.today-trip__lines {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 0 44px;
+}
+
+.today-trip__line {
+  font-size: 15px;
+  color: var(--ink-2);
 }
