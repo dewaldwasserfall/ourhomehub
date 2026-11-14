@@ -148,6 +148,7 @@ beforeAll(async () => {
     "20261113001300_stars_rewards.sql",
     "20261113001400_weekly_review.sql",
     "20261113001500_supplies.sql",
+    "20261113001600_done_for.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -1161,5 +1162,42 @@ describe("supplies", () => {
     await db.query(`delete from public.chores where id = $1`, [chore]);
     expect(await all(`select * from public.supply_uses where supply_id = $1`, [supply])).toHaveLength(0);
     expect(await left()).toBe(0);
+  });
+});
+
+describe("done for", () => {
+  it("credits the child when a grown-up ticks their task", async () => {
+    await actAs("dewald");
+    const kid = (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS.kid.id])).id;
+    const dewald = (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS.dewald.id])).id;
+    const stars = async () =>
+      (await one<{ earned: number }>(`select earned from public.member_stars($1, '2030-03-01')`, [kid])).earned;
+    const before = await stars();
+
+    // The kid's chore and an unassigned one, both ticked by Dewald.
+    const kidsChore = (
+      await one<{ id: string }>(
+        `insert into public.chores (household_id, title, every_n, unit, next_due, assigned_to) values ($1, 'Feed the cat', 1, 'day', '2030-03-01', $2) returning id`,
+        [householdId, kid],
+      )
+    ).id;
+    const anyones = (
+      await one<{ id: string }>(
+        `insert into public.chores (household_id, title, every_n, unit, next_due) values ($1, 'Water plants', 1, 'day', '2030-03-01') returning id`,
+        [householdId],
+      )
+    ).id;
+    await db.query(`select public.set_completion('chore', $1, '2030-03-01', true)`, [kidsChore]);
+    await db.query(`select public.set_completion('chore', $1, '2030-03-01', true)`, [anyones]);
+
+    const rows = await all<{ item_id: string; done_by: string; done_for: string }>(
+      `select item_id, done_by, done_for from public.completions where item_id in ($1, $2)`,
+      [kidsChore, anyones],
+    );
+    expect(rows.find((r) => r.item_id === kidsChore)).toMatchObject({ done_by: dewald, done_for: kid });
+    expect(rows.find((r) => r.item_id === anyones)).toMatchObject({ done_by: dewald, done_for: dewald });
+
+    // The star goes to the kid.
+    expect(await stars()).toBe(before + 1);
   });
 });

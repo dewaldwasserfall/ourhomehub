@@ -210,6 +210,8 @@ export interface Completion {
   item_id: string;
   for_date: string;
   done_by: string | null;
+  /** Who it counts for: the task's assignee, else whoever ticked it. */
+  done_for: string | null;
   done_at: string;
 }
 

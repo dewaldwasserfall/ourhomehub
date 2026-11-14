@@ -211,14 +211,21 @@ export default function TodayPage() {
 
   const mode = dayInfo?.mode ?? null;
 
-  /** Should a thing assigned to `assignee` show on my Today? */
+  /**
+   * Should a thing assigned to `assignee` show on my Today?
+   *  - mine: always
+   *  - adults also see unassigned things and the children's (the kids do
+   *    their chores; a grown-up ticks them off)
+   *  - "Everyone's" adds the other adults' things too
+   */
   const isMine = useCallback(
     (assignee: string | null) => {
-      if (showEveryone && meIsAdult) return true;
       if (assignee === me.id) return true;
-      return assignee === null && meIsAdult;
+      if (!meIsAdult) return false;
+      if (showEveryone || assignee === null) return true;
+      return memberById(assignee)?.role === "child";
     },
-    [showEveryone, meIsAdult, me.id],
+    [showEveryone, meIsAdult, me.id, memberById],
   );
 
   const isDone = useCallback(
@@ -367,7 +374,7 @@ export default function TodayPage() {
                 ? d.completions.filter((c) => !(c.kind === item.kind && c.item_id === item.id && c.for_date === today))
                 : [
                     ...d.completions,
-                    { id: `pending-${item.id}`, household_id: household.id, kind: item.kind as "step", item_id: item.id, for_date: today, done_by: me.id, done_at: new Date().toISOString() },
+                    { id: `pending-${item.id}`, household_id: household.id, kind: item.kind as "step", item_id: item.id, for_date: today, done_by: me.id, done_for: item.assignee ?? me.id, done_at: new Date().toISOString() },
                   ],
               chores: item.kind === "chore" ? d.chores.filter((c) => c.id !== item.id) : d.chores,
             }));
