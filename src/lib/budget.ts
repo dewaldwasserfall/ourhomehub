@@ -146,15 +146,20 @@ export function summarise(
 // Step 4: where it went
 // -----------------------------------------------------------------------------
 
+/** Legal-form endings that make one shop look like two ("Picnic B.V." vs "Picnic"). */
+const LEGAL_SUFFIX = /\s+(b\.?\s?v\.?|n\.?\s?v\.?|v\.?o\.?f\.?|gmbh|ltd\.?|inc\.?)$/i;
+
 /**
  * A tidy shop name: card payments read like "ALBERT HEIJN 1234 BREDA NLD", so
- * cut at the first number and title-case the words.
+ * cut at the first number, drop a legal-form ending (B.V., N.V., GmbH, ...)
+ * and title-case the words.
  */
 export function merchantName(counterparty: string | null): string {
   const raw = (counterparty ?? "").trim();
   if (!raw) return "Other";
   const cut = raw.split(/\s\d|\s\*|,/)[0].trim() || raw;
-  return cut
+  const plain = cut.replace(LEGAL_SUFFIX, "").trim() || cut;
+  return plain
     .toLowerCase()
     .split(/\s+/)
     .map((w) => (w.length <= 2 && w !== "ah" ? w : w[0].toUpperCase() + w.slice(1)))

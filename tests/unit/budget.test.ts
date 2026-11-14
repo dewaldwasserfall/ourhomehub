@@ -92,6 +92,11 @@ describe("formatting", () => {
     expect(merchantName("ALBERT HEIJN 1234 BREDA NLD")).toBe("Albert Heijn");
     expect(merchantName("AH to go 5521")).toBe("AH to go");
     expect(merchantName(null)).toBe("Other");
+    // One shop, whatever its legal form says.
+    expect(merchantName("Picnic BV")).toBe("Picnic");
+    expect(merchantName("PICNIC B.V.")).toBe("Picnic");
+    expect(merchantName("Picnic")).toBe("Picnic");
+    expect(merchantName("Lidl Nederland GmbH")).toBe("Lidl Nederland");
     expect(euros(100000)).toBe("€1,000");
     expect(euros(1234)).toBe("€12.34");
   });
