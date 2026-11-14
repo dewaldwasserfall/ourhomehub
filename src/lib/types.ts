@@ -52,6 +52,8 @@ export interface Member {
   can_see_finances: boolean;
   /** Sees Trips (set by the owner; children read-only). */
   can_see_trips: boolean;
+  /** Sees and controls SmartThings devices (owner-controlled; adults only). */
+  can_manage_home?: boolean;
   created_at: string;
 }
 
@@ -241,6 +243,8 @@ export interface Supply {
   /** Suggested on the shopping list at this many uses left. */
   warn_at: number;
   suggested_at_uses: number | null;
+  /** tasks: linked ticks use it; automations: only Home automations do. */
+  counted_by?: "tasks" | "automations";
   created_at: string;
 }
 
@@ -396,4 +400,32 @@ export interface MemberId {
   issue_date: string | null;
   place_of_issue: string;
   created_at: string;
+}
+
+// -----------------------------------------------------------------------------
+// Home (SmartThings)
+// -----------------------------------------------------------------------------
+
+export interface HomeConnection {
+  household_id: string;
+  location_name: string | null;
+  status: "active" | "error";
+  last_error: string | null;
+  last_synced_at: string | null;
+  last_event_at: string | null;
+  events_enabled: boolean;
+  created_at: string;
+}
+
+export interface HomeDevice {
+  id: string;
+  household_id: string;
+  external_id: string;
+  name: string;
+  room: string | null;
+  kind: import("./smartthings/devices").HomeDeviceKind;
+  capabilities: string[];
+  state: import("./smartthings/devices").DeviceState;
+  present: boolean;
+  updated_at: string;
 }

@@ -39,3 +39,8 @@ export function canEditTrips(member: Pick<Member, "role" | "can_see_trips">): bo
 export function roleLabel(role: Member["role"]): string {
   return role === "owner" ? "Owner" : role === "child" ? "Child" : "Adult";
 }
+
+/** Sees and controls Home (SmartThings): the owner, and adults they allow. */
+export function canManageHome(member: Pick<Member, "role" | "can_manage_home">): boolean {
+  return member.role === "owner" || (member.role === "adult" && Boolean(member.can_manage_home));
+}

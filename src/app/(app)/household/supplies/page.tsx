@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useHousehold } from "@/components/household-context";
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon } from "@/components/icons";
 import { Navbar } from "@/components/navbar";
+import { Segmented } from "@/components/segmented";
 import { Sheet } from "@/components/sheet";
 import { useToast } from "@/components/toast";
 import { dateKey } from "@/lib/calendar/time";
@@ -58,6 +59,7 @@ export default function SuppliesPage() {
   const [perPack, setPerPack] = useState("40");
   const [warnAt, setWarnAt] = useState("5");
   const [left, setLeft] = useState("40");
+  const [countedBy, setCountedBy] = useState<"tasks" | "automations">("tasks");
   const [linked, setLinked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -70,6 +72,7 @@ export default function SuppliesPage() {
     setWarnAt(String(s?.warn_at ?? 5));
     // A new product: assume a full pack is open now.
     setLeft(String(s?.uses_left ?? 40));
+    setCountedBy(s?.counted_by ?? "tasks");
     setLinked(new Set(s ? uses.filter((u) => u.supply_id === s.id).map((u) => taskKey(u.kind, u.task_id)) : []));
     setConfirmDelete(false);
   }, [editing, uses]);
@@ -91,7 +94,7 @@ export default function SuppliesPage() {
       });
       if (itemError) throw itemError;
 
-      const fields = { item_id: itemId as string, uses_per_pack: perPackN!, warn_at: warnAtN!, uses_left: leftN! };
+      const fields = { item_id: itemId as string, uses_per_pack: perPackN!, warn_at: warnAtN!, uses_left: leftN!, counted_by: countedBy };
       let supplyId = editing.supply?.id;
       if (supplyId) {
         // A changed count allows a new suggestion once it runs low again.
@@ -275,6 +278,23 @@ export default function SuppliesPage() {
               </label>
             ))}
           </div>
+
+          {/* How it runs down: ticks on tasks, or Home automations only
+              (so a washer automation and a washing task never both count) */}
+          <Segmented
+            label="Counted by"
+            value={countedBy}
+            onChange={setCountedBy}
+            options={[
+              { value: "tasks", label: "Ticked tasks" },
+              { value: "automations", label: "Automations" },
+            ]}
+          />
+          {countedBy === "automations" && (
+            <p className="section__footer" style={{ marginTop: -6 }}>
+              Ticking the tasks below won&rsquo;t use it up; a Home automation (for example &ldquo;washer finished&rdquo;) does.
+            </p>
+          )}
 
           {/* Tasks that use it */}
           <div className="section__header" style={{ padding: "0 4px" }}>

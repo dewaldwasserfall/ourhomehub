@@ -22,6 +22,8 @@ const PUBLIC_PATHS = [
   // session (the board layout shows the pairing screen when signed out).
   "/board",
   "/api/board/pair",
+  // SmartThings calls this itself (it checks SmartThings' signature).
+  "/api/smartthings/webhook",
 ];
 
 export async function middleware(request: NextRequest) {

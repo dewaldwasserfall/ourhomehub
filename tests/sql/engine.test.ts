@@ -156,6 +156,7 @@ beforeAll(async () => {
     "20261114000300_trip_documents_ids.sql",
     "20261114000400_member_ids_details.sql",
     "20261114000500_family_board.sql",
+    "20261114000600_smartthings.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -1463,5 +1464,79 @@ describe("family board", () => {
     expect(await all(`select id from public.completions where id = $1`, [second])).toHaveLength(0);
     expect((await one<{ d: string }>(`select next_due::text as d from public.chores where id = $1`, [kidsChore])).d).toBe(next);
     expect(await left()).toBe(9);
+  });
+});
+
+describe("smartthings", () => {
+  it("lets only the owner (and adults they allow) see Home; the server records changes, not repeats", async () => {
+    await actAs("dewald");
+    const id = async (user: keyof typeof USERS) =>
+      (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS[user].id])).id;
+    const partner = await id("partner");
+    const kid = await id("kid");
+
+    // Server side: a connection and a washer.
+    await actAsAdmin();
+    await db.query(`select public.home_save_credentials($1, '{"access_token":"x"}', 'app-1', now() + interval '1 day', null)`, [householdId]);
+    await db.query(
+      `insert into public.home_devices (household_id, external_id, name, kind, capabilities) values ($1, 'washer-1', 'Washer', 'washer', '{washerOperatingState}')`,
+      [householdId],
+    );
+    const record = (value: string) =>
+      one<{ id: number | null }>(`select public.home_record_event($1, 'washer-1', 'washerOperatingState', 'machineState', to_jsonb($2::text), now()) as id`, [
+        householdId,
+        value,
+      ]);
+    expect((await record("run")).id).not.toBeNull();
+    expect((await record("run")).id).toBeNull(); // a repeat is not an event
+    expect((await record("stop")).id).not.toBeNull();
+    expect(await one(`select value, previous from public.home_events order by id desc limit 1`)).toEqual({ value: "stop", previous: "run" });
+    expect((await one<{ s: string }>(`select state->'washerOperatingState'->>'machineState' as s from public.home_devices`)).s).toBe("stop");
+
+    // The owner sees it; the partner only once allowed; kids never.
+    await actAs("dewald");
+    expect(await all(`select id from public.home_devices`)).toHaveLength(1);
+    expect(await all(`select vault_secret_id from public.home_connections`)).toHaveLength(1);
+    await expect(db.query(`select public.home_get_credentials($1)`, [householdId])).rejects.toThrow();
+    await actAs("partner");
+    expect(await all(`select id from public.home_devices`)).toHaveLength(0);
+    await expect(db.query(`update public.members set can_manage_home = true where id = $1`, [partner])).rejects.toThrow(/owner_only/);
+    await actAs("dewald");
+    await db.query(`select public.set_home_access($1, true)`, [partner]);
+    await expect(db.query(`select public.set_home_access($1, true)`, [kid])).rejects.toThrow(/member_not_in_household/);
+    await actAs("partner");
+    expect(await all(`select id from public.home_events`)).toHaveLength(2);
+    await actAs("kid");
+    expect(await all(`select id from public.home_devices`)).toHaveLength(0);
+
+    // Disconnecting forgets everything.
+    await actAsAdmin();
+    await db.query(`select public.home_remove_connection($1)`, [householdId]);
+    expect(await all(`select id from public.home_devices`)).toHaveLength(0);
+    expect(await all(`select id from vault.secrets where name like 'smartthings_%'`)).toHaveLength(0);
+  });
+
+  it("only counts a supply from ticks when it's counted by ticks", async () => {
+    await actAs("dewald");
+    const day = "2030-05-01";
+    const chore = (
+      await one<{ id: string }>(`insert into public.chores (household_id, title, every_n, unit, next_due) values ($1, 'Washing', 1, 'day', $2) returning id`, [
+        householdId,
+        day,
+      ])
+    ).id;
+    const itemId = (await one<{ id: string }>(`select public.ensure_item('Fabric softener') as id`)).id;
+    const supply = (
+      await one<{ id: string }>(
+        `insert into public.supplies (household_id, item_id, uses_per_pack, uses_left, warn_at, counted_by) values ($1, $2, 10, 10, 0, 'automations') returning id`,
+        [householdId, itemId],
+      )
+    ).id;
+    await db.query(`insert into public.supply_uses (supply_id, household_id, kind, task_id) values ($1, $2, 'chore', $3)`, [supply, householdId, chore]);
+    await db.query(`select public.set_completion('chore', $1, $2, true)`, [chore, day]);
+    expect((await one<{ n: number }>(`select uses_left as n from public.supplies where id = $1`, [supply])).n).toBe(10);
+    await db.query(`update public.supplies set counted_by = 'tasks' where id = $1`, [supply]);
+    await db.query(`select public.set_completion('chore', $1, $2, true)`, [chore, "2030-05-02"]);
+    expect((await one<{ n: number }>(`select uses_left as n from public.supplies where id = $1`, [supply])).n).toBe(9);
   });
 });
