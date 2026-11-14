@@ -2978,3 +2978,21 @@ textarea.input {
   letter-spacing: 0.1em;
   font-variant-numeric: tabular-nums;
 }
+
+/* Dishwasher on the Family board */
+.board-dishwasher {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.board-dishwasher__label {
+  font-size: 15px;
+  color: var(--ink-2);
+}
+.board-dishwasher__state {
+  font-size: 22px;
+  font-weight: 700;
+}
+.board-dishwasher--done .board-dishwasher__state {
+  color: #248a3d;
+}

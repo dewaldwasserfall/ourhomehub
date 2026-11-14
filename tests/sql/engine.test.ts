@@ -158,6 +158,7 @@ beforeAll(async () => {
     "20261114000500_family_board.sql",
     "20261114000600_smartthings.sql",
     "20261114000700_member_ids_rijbewijs.sql",
+    "20261114000800_dishwasher.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -1543,5 +1544,39 @@ describe("smartthings", () => {
     await db.query(`update public.supplies set counted_by = 'tasks' where id = $1`, [supply]);
     await db.query(`select public.set_completion('chore', $1, $2, true)`, [chore, "2030-05-02"]);
     expect((await one<{ n: number }>(`select uses_left as n from public.supplies where id = $1`, [supply])).n).toBe(9);
+  });
+});
+
+describe("dishwasher", () => {
+  it("adds one unassigned 'Empty the dishwasher' per finished run, and the household can see the state", async () => {
+    await actAsAdmin();
+    await db.query(`select public.appliance_save_credentials($1, '{"apiKey":"k"}', null)`, [householdId]);
+    await db.query(`update public.appliance_connections set state = 'RUNNING', ends_at = now() + interval '40 minutes' where household_id = $1`, [householdId]);
+    const finish = async () => (await one<{ id: string | null }>(`select public.appliance_run_finished($1) as id`, [householdId])).id;
+
+    const first = await finish();
+    expect(first).not.toBeNull();
+    expect(await one(`select text, status, assigned_to from public.list_entries where id = $1`, [first])).toEqual({
+      text: "Empty the dishwasher",
+      status: "open",
+      assigned_to: null,
+    });
+    // Still open: not added again.
+    expect(await finish()).toBeNull();
+
+    // Kids and the board see the state (Today, the board); nobody can read the tokens.
+    await actAs("kid");
+    expect((await one<{ state: string }>(`select state from public.appliance_connections`)).state).toBe("RUNNING");
+    await expect(db.query(`select public.appliance_get_credentials($1)`, [householdId])).rejects.toThrow();
+    await expect(db.query(`select public.set_appliance_auto_task(false)`)).rejects.toThrow(/owner_only/);
+
+    // The owner turns the auto task off: a finished run adds nothing.
+    await actAs("dewald");
+    await db.query(`update public.list_entries set status = 'done' where id = $1`, [first]);
+    await db.query(`select public.set_appliance_auto_task(false)`);
+    await actAsAdmin();
+    expect(await finish()).toBeNull();
+    await db.query(`select public.appliance_remove($1)`, [householdId]);
+    expect(await all(`select * from public.appliance_connections`)).toHaveLength(0);
   });
 });

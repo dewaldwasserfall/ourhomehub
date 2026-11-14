@@ -48,6 +48,7 @@ const PLAN_LINKS = [
   { href: "/household/bins", title: "Bin days", subtitle: "Collection dates from the Afvalservice app", Icon: BinIcon, colour: "#2f9e44" },
   { href: "/household/holidays", title: "School holidays", subtitle: "Holidays, public holidays and days off", Icon: HolidayIcon, colour: "#ff2d55" },
   { href: "/household/board", title: "Family board", subtitle: "A wall tablet with everyone's day", Icon: TabletIcon, colour: "#8e8e93" },
+  { href: "/household/dishwasher", title: "Dishwasher", subtitle: "Time left, and a to-do when it's done", Icon: ChoreIcon, colour: "#0a84ff" },
   // Home (SmartThings) is parked: SmartThings' API now needs a paid plan.
   // The page still exists at /household/home; add this line back to show it.
   // { href: "/household/home", title: "Home", subtitle: "SmartThings: TV, washer, dryer and lights", Icon: HomeIcon, colour: "#15bef0" },

@@ -39,6 +39,7 @@ import { friendlyError } from "@/lib/errors";
 import { choreDueOn, describeDay, MODE_LABELS, stepApplies, TIME_OF_DAY_LABELS, timeOfDayAt, zoneFortnight } from "@/lib/plan";
 import { BudgetBar, statusText } from "@/components/budget-bar";
 import { TodayTrip } from "@/components/today-trip";
+import { DishwasherCard } from "@/components/dishwasher-card";
 import { euros } from "@/lib/budget";
 import { binColour, binList, binsAround } from "@/lib/bins";
 import { useBudget } from "@/lib/use-budget";
@@ -541,6 +542,9 @@ export default function TodayPage() {
 
       {/* A trip that's on, or starting within a week (people with access) */}
       <TodayTrip today={today} />
+
+      {/* The dishwasher, while it runs or when it's done (if connected) */}
+      <DishwasherCard />
 
       {/* Sunday: a nudge to look back at the week (adults) */}
       {!isChild && isReviewDay(today) && (

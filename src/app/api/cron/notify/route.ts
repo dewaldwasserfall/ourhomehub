@@ -5,12 +5,13 @@
  * the one pg_cron reads from Supabase Vault. The route asks the database to
  * compare it (notify_check_secret), so the secret is never copied to Vercel.
  *
- * Also rides along: grocery budget sync, SmartThings token refresh and
- * pruning old device events (one cron job for all of them).
+ * Also rides along: grocery budget sync, SmartThings token refresh, pruning
+ * old device events and checking the dishwasher (one cron job for all).
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { syncStaleBudgets } from "@/lib/bunq/sync";
 import { runNotifications } from "@/lib/notify/run";
+import { pollDueAppliances } from "@/lib/electrolux/poll";
 import { refreshDueTokens } from "@/lib/smartthings/sync";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -41,7 +42,14 @@ export async function POST(request: NextRequest) {
       return 0;
     });
     await admin.rpc("home_prune_events").then(undefined, () => undefined);
-    return NextResponse.json({ ...notifications, budgets, smartthings });
+
+    // The dishwasher: read its state (countdown on Today) and add "Empty
+    // the dishwasher" when a run has just finished.
+    const appliances = await pollDueAppliances().catch((err) => {
+      console.error("[dishwasher] poll failed", err);
+      return 0;
+    });
+    return NextResponse.json({ ...notifications, budgets, smartthings, appliances });
   } catch (err) {
     console.error("[notify] run failed", err);
     return NextResponse.json({ error: "notify_failed" }, { status: 500 });

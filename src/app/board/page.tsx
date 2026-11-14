@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Avatar } from "@/components/avatar";
 import { useHousehold } from "@/components/household-context";
+import { DishwasherCard } from "@/components/dishwasher-card";
 import { Sheet } from "@/components/sheet";
 import { useToast } from "@/components/toast";
 import { binColour, binList, binsAround } from "@/lib/bins";
@@ -153,6 +154,9 @@ export default function BoardTodayPage() {
       {/* Left: the day, bins and calendar */}
       <aside className="board-side">
         {modeLabel && <div className={`board-mode board-mode--${dayInfo?.mode}`}>{modeLabel}</div>}
+
+        {/* The dishwasher, while it runs or when it's done */}
+        <DishwasherCard variant="board" />
 
         {(bins.today.length > 0 || bins.tomorrow.length > 0) && (
           <div className="board-card board-bins">
