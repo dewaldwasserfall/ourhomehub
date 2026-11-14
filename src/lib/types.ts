@@ -349,3 +349,33 @@ export interface TripRate {
   /** Numeric from Postgres arrives as a string. */
   rate: number | string;
 }
+
+export const DOCUMENT_CATEGORIES = ["Flight", "Hotel", "Booking", "Ticket", "Visa", "Insurance", "Other"] as const;
+export type DocumentCategory = (typeof DOCUMENT_CATEGORIES)[number];
+
+export interface TripDocument {
+  id: string;
+  trip_id: string;
+  household_id: string;
+  name: string;
+  category: DocumentCategory;
+  /** Path in the private trip-documents bucket. */
+  storage_path: string;
+  content_type: string;
+  size_bytes: number;
+  expiry_date: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+/** Passport or ID card: expiry and the 1Password link, never the number. */
+export interface MemberId {
+  id: string;
+  household_id: string;
+  member_id: string;
+  kind: "passport" | "id_card";
+  country: string;
+  expiry_date: string;
+  onepassword_url: string | null;
+  created_at: string;
+}

@@ -38,6 +38,10 @@ export interface Prefs {
   bins_morning_time: string;
   /** Sunday 19:00: the week review (adults only). */
   weekly_review: boolean;
+  /** 18:00 the day before: "check in tomorrow at …" (Trips access). */
+  trip_checkin: boolean;
+  /** 09:00: a passport or ID expiring in 6 / 3 / 1 month(s) (Trips access). */
+  id_expiry: boolean;
 }
 
 /**
@@ -59,6 +63,8 @@ export function defaultPrefs(role: Member["role"]): Prefs {
     bins_morning: !child,
     bins_morning_time: "07:00",
     weekly_review: !child,
+    trip_checkin: !child,
+    id_expiry: !child,
   };
 }
 

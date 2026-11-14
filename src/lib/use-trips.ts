@@ -17,7 +17,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { isNetworkError, readCache, SYNCED_EVENT, writeCache } from "./offline";
 import { getSupabaseBrowserClient } from "./supabase/client";
-import type { ChecklistTemplate, Trip, TripBudgetItem, TripChecklistItem, TripParticipant, TripPlan, TripRate, TripStay } from "./types";
+import type { ChecklistTemplate, MemberId, Trip, TripBudgetItem, TripChecklistItem, TripDocument, TripParticipant, TripPlan, TripRate, TripStay } from "./types";
 
 // -----------------------------------------------------------------------------
 // Step 1: all trips
@@ -84,9 +84,10 @@ export interface TripDetail {
   checklist: TripChecklistItem[];
   budget: TripBudgetItem[];
   rates: TripRate[];
+  documents: TripDocument[];
 }
 
-const EMPTY: TripDetail = { trip: null, participants: [], stays: [], plans: [], checklist: [], budget: [], rates: [] };
+const EMPTY: TripDetail = { trip: null, participants: [], stays: [], plans: [], checklist: [], budget: [], rates: [], documents: [] };
 
 export function useTrip(tripId: string) {
   const supabase = getSupabaseBrowserClient();
@@ -95,7 +96,7 @@ export function useTrip(tripId: string) {
   const [missing, setMissing] = useState(false);
 
   const reload = useCallback(async () => {
-    const [t, p, s, pl, c, b, r] = await Promise.all([
+    const [t, p, s, pl, c, b, r, d] = await Promise.all([
       supabase.from("trips").select("*").eq("id", tripId).maybeSingle(),
       supabase.from("trip_participants").select("*").eq("trip_id", tripId),
       supabase.from("trip_stays").select("*").eq("trip_id", tripId).order("check_in"),
@@ -103,6 +104,7 @@ export function useTrip(tripId: string) {
       supabase.from("trip_checklist").select("*").eq("trip_id", tripId).order("sort_order"),
       supabase.from("trip_budget").select("*").eq("trip_id", tripId),
       supabase.from("trip_rates").select("*").eq("trip_id", tripId),
+      supabase.from("trip_documents").select("*").eq("trip_id", tripId).order("created_at"),
     ]);
     if (t.error && isNetworkError(t.error)) {
       const cached = readCache<TripDetail>(`trip:${tripId}`);
@@ -124,6 +126,7 @@ export function useTrip(tripId: string) {
       checklist: (c.data ?? []) as TripChecklistItem[],
       budget: (b.data ?? []) as TripBudgetItem[],
       rates: (r.data ?? []) as TripRate[],
+      documents: (d.data ?? []) as TripDocument[],
     };
     setData(next);
     writeCache(`trip:${tripId}`, next);
@@ -145,6 +148,7 @@ export function useTrip(tripId: string) {
       .on("postgres_changes", { event: "*", schema: "public", table: "trip_checklist", filter }, () => reload())
       .on("postgres_changes", { event: "*", schema: "public", table: "trip_budget", filter }, () => reload())
       .on("postgres_changes", { event: "*", schema: "public", table: "trip_rates", filter }, () => reload())
+      .on("postgres_changes", { event: "*", schema: "public", table: "trip_documents", filter }, () => reload())
       .subscribe();
     return () => {
       document.removeEventListener("visibilitychange", onVisible);
@@ -180,4 +184,32 @@ export function useChecklistTemplates(householdId: string, enabled: boolean) {
   }, [reload]);
 
   return { templates, reload };
+}
+
+// -----------------------------------------------------------------------------
+// Step 4: passports and ID cards (expiry + 1Password link)
+// -----------------------------------------------------------------------------
+
+export function useMemberIds(householdId: string, enabled: boolean) {
+  const supabase = getSupabaseBrowserClient();
+  const [ids, setIds] = useState<MemberId[]>([]);
+  const [loading, setLoading] = useState(enabled);
+
+  const reload = useCallback(async () => {
+    if (!enabled) return;
+    const { data, error } = await supabase.from("member_ids").select("*").eq("household_id", householdId).order("expiry_date");
+    if (error && isNetworkError(error)) {
+      setIds(readCache<MemberId[]>(`member-ids:${householdId}`) ?? []);
+    } else {
+      setIds((data ?? []) as MemberId[]);
+      writeCache(`member-ids:${householdId}`, data ?? []);
+    }
+    setLoading(false);
+  }, [supabase, householdId, enabled]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  return { ids, loading, reload };
 }

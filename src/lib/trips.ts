@@ -12,6 +12,8 @@
  *   * tripsOnDay()      – trips covering a date (calendar)
  *   * todayTrip()       – the trip to show on Today (during, or within a week)
  *   * missedSchool()    – children on the trip, with the school days they'd miss
+ *   * bookingSearchUrl()– Booking.com search, filled in with the trip
+ *   * checkinReminder() – "Check in tomorrow at Casa Mar" (push)
  */
 import { addDays, daysBetweenKeys } from "./calendar/time";
 import type { Member, Trip, TripParticipant, TripPlan, TripStay } from "./types";
@@ -185,4 +187,64 @@ export function missedSchool(
 /** "Shannon and Lennon", "Shannon, Lennon and Jana" */
 export function namesList(names: string[]): string {
   return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+// -----------------------------------------------------------------------------
+// Step 6: Booking.com search, filled in
+// -----------------------------------------------------------------------------
+
+/**
+ * Opens Booking.com's search for the trip: destination, check-in/out (the
+ * first night without a stay, else the whole trip) and how many adults and
+ * children are going. A plain public link: no account or API needed.
+ */
+export function bookingSearchUrl(
+  trip: Pick<Trip, "destination" | "name" | "start_date" | "end_date">,
+  participants: Pick<TripParticipant, "member_id">[],
+  members: Pick<Member, "id" | "role">[],
+  nights?: { checkIn: string; checkOut: string },
+): string {
+  const going = members.filter((m) => participants.some((p) => p.member_id === m.id));
+  const children = going.filter((m) => m.role === "child").length;
+  const adults = Math.max(1, going.length - children);
+  const params = new URLSearchParams({
+    ss: trip.destination || trip.name,
+    checkin: nights?.checkIn ?? trip.start_date,
+    checkout: nights?.checkOut ?? (trip.end_date > trip.start_date ? trip.end_date : addDays(trip.start_date, 1)),
+    group_adults: String(adults),
+    group_children: String(children),
+    no_rooms: "1",
+  });
+  return `https://www.booking.com/searchresults.html?${params.toString()}`;
+}
+
+/** The stretch of nights without a stay that starts first, as check-in/out. */
+export function firstGap(trip: Pick<Trip, "start_date" | "end_date">, stays: TripStay[]): { checkIn: string; checkOut: string } | null {
+  const gaps = nightsWithoutStay(trip, stays);
+  if (!gaps.length) return null;
+  let end = gaps[0];
+  while (gaps.includes(addDays(end, 1))) end = addDays(end, 1);
+  return { checkIn: gaps[0], checkOut: addDays(end, 1) };
+}
+
+// -----------------------------------------------------------------------------
+// Step 7: "check in tomorrow"
+// -----------------------------------------------------------------------------
+
+export function checkinReminder(
+  trip: Pick<Trip, "id" | "name">,
+  stays: Pick<TripStay, "id" | "name" | "location" | "check_in" | "booking_ref">[],
+  today: string,
+): { key: string; title: string; body: string; url: string } | null {
+  const tomorrow = addDays(today, 1);
+  const due = stays.filter((s) => s.check_in === tomorrow);
+  if (!due.length) return null;
+  const s = due[0];
+  const extra = [s.location, s.booking_ref && `ref ${s.booking_ref}`].filter(Boolean).join(" · ");
+  return {
+    key: `checkin:${s.id}:${s.check_in}`,
+    title: `Tomorrow: check in at ${s.name}`,
+    body: extra ? `${trip.name} · ${extra}` : trip.name,
+    url: `/trips/${trip.id}`,
+  };
 }

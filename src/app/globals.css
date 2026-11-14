@@ -2560,3 +2560,22 @@ textarea.input {
   font-weight: 400;
   color: var(--ink-3);
 }
+
+/* Trips: links and ID expiry colours */
+.trip-link {
+  color: var(--accent);
+}
+
+.id-person {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.id-expiry--soon {
+  color: #ff9500;
+}
+
+.id-expiry--expired {
+  color: #ff3b30;
+}

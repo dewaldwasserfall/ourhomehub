@@ -4,6 +4,7 @@
  */
 "use client";
 
+import { canEditTrips } from "@/lib/roles";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useHousehold } from "@/components/household-context";
@@ -235,6 +236,23 @@ export default function NotificationsPage() {
               hint="Sunday at 19:00: what got done and next week's bins"
               checked={prefs.weekly_review}
               onChange={(v) => set("weekly_review", v)}
+            />
+          </div>
+        )}
+        {/* Trips reminders: only for adults the owner gave Trips access */}
+        {canEditTrips(me) && (
+          <div className="group" style={{ marginTop: 12 }}>
+            <SwitchRow
+              label="Check in tomorrow"
+              hint="18:00 the day before you arrive somewhere on a trip"
+              checked={prefs.trip_checkin}
+              onChange={(v) => set("trip_checkin", v)}
+            />
+            <SwitchRow
+              label="Passports and ID cards"
+              hint="6, 3 and 1 month before one expires"
+              checked={prefs.id_expiry}
+              onChange={(v) => set("id_expiry", v)}
             />
           </div>
         )}

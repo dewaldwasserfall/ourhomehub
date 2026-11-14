@@ -10,8 +10,13 @@
  *   Budget   – costs in several currencies, paid or not (adults only;
  *              components/trip-budget)
  *
- * Adults with access edit; children with access only read. (Documents
- * arrive in the next phase.)
+ *   Documents – tickets, bookings, insurance in private storage (adults only;
+ *              components/trip-documents)
+ *
+ * Overview also warns about passports/IDs running out and children missing
+ * school, and links to a Booking.com search filled in with the trip.
+ *
+ * Adults with access edit; children with access only read.
  */
 "use client";
 
@@ -25,6 +30,7 @@ import { Navbar } from "@/components/navbar";
 import { Segmented } from "@/components/segmented";
 import { useToast } from "@/components/toast";
 import { TripBudget } from "@/components/trip-budget";
+import { TripDocuments } from "@/components/trip-documents";
 import { TripPacking } from "@/components/trip-packing";
 import {
   EMERGENCY_LABELS,
@@ -42,7 +48,9 @@ import { friendlyError } from "@/lib/errors";
 import { canEditTrips } from "@/lib/roles";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
+  bookingSearchUrl,
   buildTripDays,
+  firstGap,
   missedSchool,
   namesList,
   nightsWithoutStay,
@@ -55,9 +63,10 @@ import {
   tripRange,
 } from "@/lib/trips";
 import type { TripEmergency, TripParticipant, TripPlan, TripStay } from "@/lib/types";
-import { useTrip } from "@/lib/use-trips";
+import { useMemberIds, useTrip } from "@/lib/use-trips";
+import { idLabel, tripIdWarnings, expiryText } from "@/lib/member-ids";
 
-type Section = "overview" | "days" | "packing" | "budget";
+type Section = "overview" | "days" | "packing" | "budget" | "documents";
 
 const dayHeading = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 const heading = (date: string) => dayHeading.format(new Date(`${date}T12:00:00Z`));
@@ -70,7 +79,9 @@ export default function TripPage() {
   const { household, members, me, memberById } = useHousehold();
   const today = dateKey(new Date(), household.timezone);
   const canEdit = canEditTrips(me);
-  const { trip, participants, stays, plans, checklist, budget, rates, loading, missing, reload } = useTrip(id);
+  const { trip, participants, stays, plans, checklist, budget, rates, documents, loading, missing, reload } = useTrip(id);
+  // Passports / IDs (adults with access only) for the "runs out" warning.
+  const { ids } = useMemberIds(household.id, canEdit);
   const [section, setSection] = useState<Section>("overview");
 
   // Which sheet is open.
@@ -127,6 +138,8 @@ export default function TripPage() {
 
   async function deleteTrip() {
     if (!trip) return;
+    // The files go first (deleting the trip removes their records).
+    if (documents.length) await supabase.storage.from("trip-documents").remove(documents.map((d) => d.storage_path));
     const { error } = await supabase.from("trips").delete().eq("id", trip.id);
     if (error) return void toast.show(friendlyError(error));
     router.replace("/trips");
@@ -197,6 +210,9 @@ export default function TripPage() {
 
   const phase = tripPhase(trip, today);
   const noStay = nightsWithoutStay(trip, stays);
+  const idWarnings = canEdit ? tripIdWarnings(trip, participants, ids) : [];
+  // Booking.com search for the first nights without a stay (else the trip).
+  const bookingUrl = bookingSearchUrl(trip, participants, members, firstGap(trip, stays) ?? undefined);
   const emergencyKeys = (Object.keys(EMERGENCY_LABELS) as Array<keyof TripEmergency>).filter((k) => trip.emergency?.[k]);
   // A new stay starts on the first night without one (or the first day).
   const defaultCheckIn = noStay[0] ?? trip.start_date;
@@ -226,8 +242,13 @@ export default function TripPage() {
             { value: "overview", label: "Overview" },
             { value: "days", label: "Days" },
             { value: "packing", label: "Packing" },
-            // Money is for adults with access only (children see the rest).
-            ...(canEdit ? [{ value: "budget" as const, label: "Budget" }] : []),
+            // Money and documents: adults with access only (children see the rest).
+            ...(canEdit
+              ? [
+                  { value: "budget" as const, label: "Budget" },
+                  { value: "documents" as const, label: "Docs" },
+                ]
+              : []),
           ]}
         />
       </section>
@@ -282,6 +303,34 @@ export default function TripPage() {
                   {canEdit && <PlusIcon size={20} className="trip-add-icon" />}
                 </button>
               )}
+              {noStay.length > 0 && (
+                <a className="row row--link" href={bookingUrl} target="_blank" rel="noreferrer">
+                  <span className="row__body">
+                    <span className="row__title trip-link">Search places on Booking.com</span>
+                    <span className="row__subtitle">Opens with these dates and who&rsquo;s going filled in</span>
+                  </span>
+                </a>
+              )}
+              {idWarnings.map((w) => {
+                const name = memberById(w.memberId)?.display_name.split(" ")[0] ?? "";
+                const text =
+                  w.problem === "missing"
+                    ? `No passport or ID recorded for ${name}`
+                    : w.problem === "expires_during"
+                      ? `${name}'s ${idLabel(w.id!).toLowerCase()} expires before you're back`
+                      : `${name}'s ${idLabel(w.id!).toLowerCase()} has less than 6 months left after the trip`;
+                return (
+                  <Link key={w.memberId} href="/trips/ids" className="row row--link">
+                    <span className="row__body">
+                      <span className="row__title trip-warning">{text}</span>
+                      <span className="row__subtitle">
+                        {w.id ? `Valid until ${expiryText(w.id.expiry_date)}. Many countries ask for 6 months left on arrival.` : "Add it to check it covers the trip."}
+                      </span>
+                    </span>
+                    <ChevronRightIcon className="row__chevron" size={16} />
+                  </Link>
+                );
+              })}
             </div>
           </section>
 
@@ -373,6 +422,9 @@ export default function TripPage() {
                 <button type="button" className="button" onClick={() => setStay({ stay: null })}>
                   Add a stay
                 </button>
+                <a className="button" href={bookingUrl} target="_blank" rel="noreferrer">
+                  Booking.com
+                </a>
                 <button type="button" className="button" onClick={() => setPlan({ plan: null, day: today >= trip.start_date && today <= trip.end_date ? today : trip.start_date })}>
                   Add a plan
                 </button>
@@ -469,6 +521,9 @@ export default function TripPage() {
         />
       )}
       {section === "budget" && canEdit && <TripBudget trip={trip} items={budget} rates={rates} reload={reload} />}
+      {section === "documents" && canEdit && (
+        <TripDocuments tripId={trip.id} householdId={household.id} meId={me.id} documents={documents} reload={reload} />
+      )}
 
       {/* Sheets */}
       <TripSheet

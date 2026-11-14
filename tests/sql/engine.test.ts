@@ -151,6 +151,7 @@ beforeAll(async () => {
     "20261113001600_done_for.sql",
     "20261114000100_trips.sql",
     "20261114000200_trip_packing_budget.sql",
+    "20261114000300_trip_documents_ids.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -162,6 +163,9 @@ beforeAll(async () => {
         .replace(/create extension if not exists pg_net[\s\S]*?(?=create or replace function public\.notify_check_secret)/, "")
         .replace(/-- 5b\.[\s\S]*?(?=-- -{10,}\n-- STEP 6)/, "");
     }
+    // Supabase Storage (buckets, storage.objects policies) doesn't exist in
+    // PGlite: skip blocks marked [storage:start] ... [storage:end].
+    sql = sql.replace(/-- \[storage:start\][\s\S]*?-- \[storage:end\][^\n]*\n/g, "");
     await db.exec(sql);
   }
 
@@ -1291,5 +1295,36 @@ describe("trip packing and budget", () => {
     await actAs("dewald");
     await db.query(`delete from public.trip_checklist where id = $1`, [group]);
     expect(await all(`select id from public.trip_checklist where trip_id = $1`, [trip])).toHaveLength(0);
+  });
+});
+
+describe("trip documents and IDs", () => {
+  it("keeps documents in the trip's folder and IDs for adults with access", async () => {
+    await actAs("dewald");
+    const trip = (await one<{ id: string }>(`select id from public.trips where name = 'Spain'`)).id;
+    const kid = (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS.kid.id])).id;
+
+    // A document in the trip's own folder; one pointing elsewhere is refused.
+    await db.query(
+      `insert into public.trip_documents (trip_id, name, category, storage_path) values ($1, 'Boarding passes', 'Flight', $2)`,
+      [trip, `${householdId}/${trip}/abc.pdf`],
+    );
+    await expect(
+      db.query(`insert into public.trip_documents (trip_id, name, storage_path) values ($1, 'Sneaky', 'someone-else/x.pdf')`, [trip]),
+    ).rejects.toThrow(/invalid_path/);
+
+    // A passport with its 1Password link; a non-link is refused.
+    await db.query(
+      `insert into public.member_ids (member_id, kind, country, expiry_date, onepassword_url) values ($1, 'passport', 'Netherlands', '2031-01-01', 'https://start.1password.com/open/i?i=x')`,
+      [kid],
+    );
+    await expect(
+      db.query(`insert into public.member_ids (member_id, kind, expiry_date, onepassword_url) values ($1, 'passport', '2031-01-01', 'NL1234567')`, [kid]),
+    ).rejects.toThrow();
+
+    // The kid (Trips access, read-only) sees neither.
+    await actAs("kid");
+    expect(await all(`select id from public.trip_documents`)).toHaveLength(0);
+    expect(await all(`select id from public.member_ids`)).toHaveLength(0);
   });
 });

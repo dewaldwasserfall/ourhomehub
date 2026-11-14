@@ -15,9 +15,11 @@ import type { BinDay } from "../bins";
 import { expandForRange } from "../calendar/expand";
 import { addDays, dateKey, wallTimeOf } from "../calendar/time";
 import type { CalendarEventRow } from "../calendar/types";
+import { idReminder } from "../member-ids";
 import { isReviewDay, reviewWeeks, weeklyReviewNotice, type WeekCounts } from "../review";
+import { checkinReminder } from "../trips";
 import { getSupabaseAdminClient } from "../supabase/admin";
-import type { Chore, Completion, DayMode, Member, Routine, RoutineStep } from "../types";
+import type { Chore, Completion, DayMode, Member, MemberId, Routine, RoutineStep } from "../types";
 import {
   binMorningReminder,
   binReminder,
@@ -36,6 +38,13 @@ import { VAPID_PUBLIC_KEY, VAPID_SUBJECT } from "./config";
 
 /** The week review goes out on Sunday at this time. */
 export const WEEKLY_REVIEW_TIME = "19:00";
+/** "Check in tomorrow" goes out the evening before. */
+export const TRIP_CHECKIN_TIME = "18:00";
+/** Passport / ID expiry reminders go out in the morning. */
+export const ID_EXPIRY_TIME = "09:00";
+
+/** Trips reminders only go to adults the owner gave Trips access. */
+const tripsAdult = (m: MemberRow) => m.role === "owner" || (m.role === "adult" && Boolean(m.can_see_trips));
 
 interface Subscription {
   id: string;
@@ -45,7 +54,7 @@ interface Subscription {
   auth: string;
 }
 
-type MemberRow = Pick<Member, "id" | "household_id" | "role" | "display_name">;
+type MemberRow = Pick<Member, "id" | "household_id" | "role" | "display_name" | "can_see_trips">;
 
 // -----------------------------------------------------------------------------
 // Step 1: sending
@@ -137,7 +146,7 @@ export async function runNotifications(now = new Date()) {
   const memberIds = [...new Set(subs.map((s) => s.member_id))];
 
   const [{ data: memberRows }, { data: prefRows }] = await Promise.all([
-    admin.from("members").select("id, household_id, role, display_name").in("id", memberIds),
+    admin.from("members").select("id, household_id, role, display_name, can_see_trips").in("id", memberIds),
     admin.from("notification_prefs").select("*").in("member_id", memberIds),
   ]);
   const members = (memberRows ?? []) as MemberRow[];
@@ -173,6 +182,34 @@ export async function runNotifications(now = new Date()) {
       // Week review: Sunday evening, adults who kept it on.
       const reviewTime = isReviewDay(today) && isTimeFor(nowMinutes, WEEKLY_REVIEW_TIME);
       const needReview = reviewTime && wants((p, m) => p.weekly_review && m.role !== "child");
+
+      // Trips: check-ins tomorrow (evening) and ID expiry (morning).
+      const needCheckin = isTimeFor(nowMinutes, TRIP_CHECKIN_TIME) && wants((p, m) => p.trip_checkin && tripsAdult(m));
+      const needIds = isTimeFor(nowMinutes, ID_EXPIRY_TIME) && wants((p, m) => p.id_expiry && tripsAdult(m));
+      const tripNotices: Notice[] = [];
+      if (needCheckin) {
+        const tomorrow = addDays(today, 1);
+        const { data: stayRows } = await admin
+          .from("trip_stays")
+          .select("id, trip_id, name, location, check_in, booking_ref, trip:trips!inner(id, name)")
+          .eq("household_id", householdId)
+          .eq("check_in", tomorrow);
+        for (const s of (stayRows ?? []) as unknown as Array<Parameters<typeof checkinReminder>[1][number] & { trip: { id: string; name: string } }>) {
+          const n = checkinReminder(s.trip, [s], today);
+          if (n) tripNotices.push(n);
+        }
+      }
+      if (needIds) {
+        const [{ data: idRows }, { data: nameRows }] = await Promise.all([
+          admin.from("member_ids").select("*").eq("household_id", householdId),
+          admin.from("members").select("id, display_name").eq("household_id", householdId),
+        ]);
+        const names = new Map(((nameRows ?? []) as Array<{ id: string; display_name: string }>).map((m) => [m.id, m.display_name.split(" ")[0]]));
+        for (const id of (idRows ?? []) as MemberId[]) {
+          const n = idReminder(id, names.get(id.member_id) ?? "Someone", today);
+          if (n) tripNotices.push(n);
+        }
+      }
 
       let binDays: BinDay[] = [];
       if (needBins) {
@@ -277,6 +314,12 @@ export async function runNotifications(now = new Date()) {
           if (b) notices.push(b);
         }
         if (review && prefs.weekly_review && member.role !== "child") notices.push(review);
+        if (tripsAdult(member)) {
+          for (const n of tripNotices) {
+            const isCheckin = n.key.startsWith("checkin:");
+            if ((isCheckin && prefs.trip_checkin) || (!isCheckin && prefs.id_expiry)) notices.push(n);
+          }
+        }
         if (prefs.routine_nudge && isTimeFor(nowMinutes, prefs.routine_nudge_time)) {
           notices.push(...routineNudges(member, routines, steps, completions, today, mode));
         }
