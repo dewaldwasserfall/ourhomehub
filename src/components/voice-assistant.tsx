@@ -49,17 +49,77 @@ const recognitionCtor = (): RecognitionCtor | null => {
 
 type Phase = "idle" | "listening" | "thinking" | "answered";
 
-/** Read a reply aloud in a British English voice, if there is one. */
-function speak(text: string) {
+/**
+ * Reading replies aloud (the browser's built-in voice).
+ *
+ * Chrome on Android is fussy about speech:
+ *   * it only speaks after a tap, and the reply arrives a few seconds after
+ *     the tap, so primeSpeech() says an empty sentence during the tap itself
+ *     to unlock speaking for the page;
+ *   * speak() straight after cancel() is often dropped, so we wait a moment;
+ *   * the voices list is empty until it has loaded ("voiceschanged");
+ *   * asking for a language with no installed voice can stay silent, so we
+ *     pick an installed English voice and use its own language.
+ */
+let primedAt = 0;
+function primeSpeech() {
+  primedAt = Date.now();
   try {
     const synth = window.speechSynthesis;
     if (!synth) return;
-    synth.cancel();
+    const u = new SpeechSynthesisUtterance(" ");
+    u.volume = 0;
+    synth.speak(u);
+  } catch {
+    // No speech on this device: replies still show on screen.
+  }
+}
+
+/** An installed English voice: British first, then any English. Waits up to 1 s for the list. */
+async function pickVoice(): Promise<SpeechSynthesisVoice | null> {
+  const synth = window.speechSynthesis;
+  const choose = () => {
+    const voices = synth.getVoices();
+    return (
+      voices.find((v) => v.lang.replace("_", "-") === "en-GB" && v.localService) ??
+      voices.find((v) => v.lang.replace("_", "-") === "en-GB") ??
+      voices.find((v) => v.lang.toLowerCase().startsWith("en")) ??
+      null
+    );
+  };
+  if (synth.getVoices().length) return choose();
+  await new Promise<void>((resolve) => {
+    const done = () => {
+      synth.removeEventListener("voiceschanged", done);
+      resolve();
+    };
+    synth.addEventListener("voiceschanged", done);
+    setTimeout(done, 1000);
+  });
+  return choose();
+}
+
+async function speak(text: string) {
+  try {
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+    // Step 1: stop anything still talking, then give Chrome a moment.
+    if (synth.speaking || synth.pending) {
+      synth.cancel();
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    // Step 2: an installed English voice, in its own language.
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = "en-GB";
-    const voice = synth.getVoices().find((v) => v.lang === "en-GB") ?? synth.getVoices().find((v) => v.lang.startsWith("en"));
-    if (voice) u.voice = voice;
-    u.rate = 1.02;
+    const voice = await pickVoice();
+    if (voice) {
+      u.voice = voice;
+      u.lang = voice.lang;
+    } else {
+      u.lang = "en-GB";
+    }
+    u.rate = 1;
+    u.volume = 1;
+    synth.resume(); // Chrome can leave the queue paused
     synth.speak(u);
   } catch {
     // No voice on this device: the reply is still on screen.
@@ -93,7 +153,7 @@ export function VoiceAssistant({ variant }: { variant: "board" | "fab" }) {
       const answer = res.ok ? (json.reply ?? "Done.") : (json.message ?? "Something went wrong. Try again.");
       setReply(answer);
       setPhase("answered");
-      speak(answer);
+      void speak(answer);
     } catch {
       setReply("No connection. Check the internet and try again.");
       setPhase("answered");
@@ -103,7 +163,9 @@ export function VoiceAssistant({ variant }: { variant: "board" | "fab" }) {
   // Step 2: listen once; send when the person stops talking.
   const listen = useCallback(() => {
     const Ctor = recognitionCtor();
-    window.speechSynthesis?.cancel();
+    // Stop a reply that's still being read out (but don't cancel the silent
+    // primer: that's what unlocks speaking for the next reply).
+    if (window.speechSynthesis?.speaking && Date.now() - primedAt > 1000) window.speechSynthesis.cancel();
     setReply(null);
     setHeard("");
     setNote(null);
@@ -145,6 +207,7 @@ export function VoiceAssistant({ variant }: { variant: "board" | "fab" }) {
 
   // Step 3: open and close.
   const start = () => {
+    primeSpeech(); // inside the tap: unlocks speaking for the reply later
     setOpen(true);
     setTyped("");
     listen();
@@ -181,11 +244,24 @@ export function VoiceAssistant({ variant }: { variant: "board" | "fab" }) {
             {phase !== "listening" && heard && <span className="voice__heard">&ldquo;{heard}&rdquo;</span>}
           </div>
           {phase === "thinking" && <p className="voice__thinking">Thinking…</p>}
-          {reply && <p className="voice__reply">{reply}</p>}
+          {reply && (
+            <div className="voice__reply">
+              <p>{reply}</p>
+              <button type="button" className="voice__replay" onClick={() => void speak(reply)} aria-label="Read it out again">
+                🔊
+              </button>
+            </div>
+          )}
           {note && <p className="voice__note">{note}</p>}
 
           {/* Talk again, or type */}
-          <button type="button" className={`voice__mic ${phase === "listening" ? "voice__mic--on" : ""}`} onClick={listen} disabled={phase === "thinking"}>
+          <button
+            type="button"
+            className={`voice__mic ${phase === "listening" ? "voice__mic--on" : ""}`}
+            onClick={() => {
+              primeSpeech();
+              listen();
+            }} disabled={phase === "thinking"}>
             <MicIcon size={28} />
             <span>{phase === "listening" ? "Listening…" : "Ask again"}</span>
           </button>
@@ -193,6 +269,7 @@ export function VoiceAssistant({ variant }: { variant: "board" | "fab" }) {
             className="voice__type"
             onSubmit={(e) => {
               e.preventDefault();
+              primeSpeech();
               recognition.current?.abort();
               setHeard(typed);
               void ask(typed);

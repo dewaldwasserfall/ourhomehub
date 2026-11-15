@@ -3590,3 +3590,21 @@ textarea.input {
     animation: none;
   }
 }
+.voice__reply {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.voice__reply p {
+  flex: 1;
+  margin: 0;
+}
+.voice__replay {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface);
+  font-size: 20px;
+}
