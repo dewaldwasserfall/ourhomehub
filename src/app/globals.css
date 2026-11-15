@@ -3080,3 +3080,182 @@ textarea.input {
   border-color: #ffb800;
   background: #ffb800;
 }
+
+/* -------------------------------------------------------------------------
+   Family board: admin mode (lock button, PIN pad, add and confirm)
+   ------------------------------------------------------------------------- */
+.board-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 17px;
+  font-weight: 600;
+}
+.board-lock--open {
+  background: var(--accent);
+  color: #fff;
+}
+.board-lock__hint {
+  opacity: 0.85;
+}
+.board-pin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 8px;
+}
+.board-pin__dots {
+  display: flex;
+  gap: 14px;
+}
+.board-pin__dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--ink-2);
+}
+.board-pin__dot--extra {
+  border-style: dashed;
+  opacity: 0.5;
+}
+.board-pin__dot--on {
+  background: var(--ink);
+  border-color: var(--ink);
+  border-style: solid;
+  opacity: 1;
+}
+.board-pin__note {
+  min-height: 22px;
+  margin: 0;
+  color: #d70015;
+  font-weight: 600;
+  text-align: center;
+}
+.board-pin__pad {
+  display: grid;
+  grid-template-columns: repeat(3, 96px);
+  gap: 14px;
+}
+.board-pin__key {
+  height: 72px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--canvas);
+  color: var(--ink);
+  font: inherit;
+  font-size: 28px;
+  font-weight: 600;
+}
+.board-pin__key:active {
+  background: var(--fill);
+}
+.board-pin__key--soft {
+  font-size: 17px;
+  color: var(--ink-2);
+}
+.board-pin__key--go {
+  font-size: 17px;
+  background: var(--accent);
+  color: #fff;
+}
+.board-pin__key:disabled {
+  opacity: 0.45;
+}
+.board-admin-add {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.board-admin-add__button {
+  min-height: 64px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 19px;
+  font-weight: 700;
+}
+.board-add {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 8px;
+}
+.board-add__input {
+  font-size: 20px;
+  min-height: 56px;
+}
+.board-add__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.board-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 18px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--canvas);
+  color: var(--ink);
+  font: inherit;
+  font-size: 17px;
+  font-weight: 600;
+}
+.board-chip--on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.board-review__what {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-size: 19px;
+}
+.board-review__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.board-review__no,
+.board-review__yes {
+  min-height: 64px;
+  border: 0;
+  border-radius: 14px;
+  font: inherit;
+  font-size: 19px;
+  font-weight: 700;
+}
+.board-review__no {
+  background: var(--canvas);
+  color: var(--ink);
+}
+.board-review__yes {
+  background: #34c759;
+  color: #fff;
+}
+.board-lock-setting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.board-pin-form {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}

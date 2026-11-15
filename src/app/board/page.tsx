@@ -9,12 +9,18 @@
  * this?". A child's tick shows as waiting until any adult confirms it on
  * their phone; an adult's counts straight away. A mis-tap can be undone on
  * the board until it's confirmed. The rules live in src/lib/board.ts.
+ *
+ * Admin mode (a parent unlocked the board with their PIN): "+ Grocery" and
+ * "+ To-do" appear on the left, and tapping a waiting tick opens Confirm /
+ * Not done. See board-admin.tsx and board-add.tsx.
  */
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Avatar } from "@/components/avatar";
 import { useHousehold } from "@/components/household-context";
+import { BoardAddSheet, type AddKind } from "@/components/board/board-add";
+import { useBoardAdmin } from "@/components/board/board-admin";
 import { DishwasherCard } from "@/components/dishwasher-card";
 import { Sheet } from "@/components/sheet";
 import { useToast } from "@/components/toast";
@@ -44,6 +50,7 @@ export default function BoardTodayPage() {
   const { household, members, memberById } = useHousehold();
   const tz = household.timezone;
   const toast = useToast();
+  const { admin, adminError } = useBoardAdmin();
 
   // Step 1: today (rolls over at midnight without a reload).
   const [now, setNow] = useState(() => new Date());
@@ -140,8 +147,36 @@ export default function BoardTodayPage() {
     [supabase, today, toast, memberById, plan, loadDay],
   );
 
+  // 5a. Admin mode: confirm or reject a waiting tick, and add things.
+  const [reviewing, setReviewing] = useState<BoardItem | null>(null);
+  const [adding, setAdding] = useState<AddKind | null>(null);
+  const review = useCallback(
+    async (item: BoardItem, confirm: boolean) => {
+      setReviewing(null);
+      setBusy(item.key);
+      const { error } = await supabase.rpc("board_review_tick", { p_kind: item.kind, p_item_id: item.id, p_confirm: confirm });
+      setBusy(null);
+      if (error) {
+        // "board_locked": the screen locks too; anything else, the usual words.
+        const locked = adminError(error.message);
+        return void toast.show(locked !== error.message ? locked : boardError(error.message));
+      }
+      toast.show(confirm ? "Confirmed ★" : "Sent back as not done");
+      await Promise.all([plan.reload(), loadDay()]);
+    },
+    [supabase, toast, adminError, plan, loadDay],
+  );
+  // Locking closes anything admin-only that was open.
+  useEffect(() => {
+    if (!admin) {
+      setReviewing(null);
+      setAdding(null);
+    }
+  }, [admin]);
+
   const tap = (item: BoardItem) => {
     if (busy) return;
+    if (admin && item.state === "pending") return void setReviewing(item);
     const action = boardTapAction(item);
     if (action.type === "tick") return void send(item, true, action.memberId);
     if (action.type === "ask_who") return void setAsking(item);
@@ -157,6 +192,18 @@ export default function BoardTodayPage() {
       {/* Left: the day, bins and calendar */}
       <aside className="board-side">
         {modeLabel && <div className={`board-mode board-mode--${dayInfo?.mode}`}>{modeLabel}</div>}
+
+        {/* Admin mode: add things */}
+        {admin && (
+          <div className="board-card board-admin-add">
+            <button type="button" className="board-admin-add__button" onClick={() => setAdding("grocery")}>
+              <span aria-hidden="true">＋</span> Grocery
+            </button>
+            <button type="button" className="board-admin-add__button" onClick={() => setAdding("todo")}>
+              <span aria-hidden="true">＋</span> To-do
+            </button>
+          </div>
+        )}
 
         {/* The dishwasher, while it runs or when it's done */}
         <DishwasherCard variant="board" />
@@ -248,7 +295,9 @@ export default function BoardTodayPage() {
                       </span>
                       <span className="board-item__text">
                         <span className="board-item__title">{item.title}</span>
-                        {item.state === "pending" && <span className="board-item__note">Waiting for a grown-up</span>}
+                        {item.state === "pending" && (
+                          <span className="board-item__note">{admin ? "Tap to confirm" : "Waiting for a grown-up"}</span>
+                        )}
                         {item.state === "open" && item.overdue && <span className="board-item__note">Late</span>}
                         {col.memberId === null || item.assignee !== null || !item.doneFor ? null : (
                           <span className="board-item__note">Done by {memberById(item.doneFor)?.display_name.split(" ")[0]}</span>
@@ -286,6 +335,30 @@ export default function BoardTodayPage() {
           </div>
         </div>
       </Sheet>
+      {/* Admin mode: confirm or reject a waiting tick */}
+      <Sheet open={!!reviewing} onClose={() => setReviewing(null)} title="Done?">
+        {reviewing && (
+          <div className="board-who">
+            <p className="board-review__what">
+              <Avatar member={memberById(reviewing.doneFor ?? reviewing.assignee ?? "")} />
+              <span>
+                <strong>{memberById(reviewing.doneFor ?? reviewing.assignee ?? "")?.display_name.split(" ")[0] ?? "Someone"}</strong> ticked{" "}
+                <strong>{reviewing.title}</strong>
+              </span>
+            </p>
+            <div className="board-review__actions">
+              <button type="button" className="board-review__no" onClick={() => review(reviewing, false)}>
+                Not done
+              </button>
+              <button type="button" className="board-review__yes" onClick={() => review(reviewing, true)}>
+                Confirm ✓
+              </button>
+            </div>
+          </div>
+        )}
+      </Sheet>
+
+      <BoardAddSheet kind={adding} today={today} onClose={() => setAdding(null)} onAdded={(m) => toast.show(m)} />
       {toast.node}
     </div>
   );

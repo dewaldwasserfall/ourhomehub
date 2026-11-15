@@ -323,3 +323,19 @@ export const VaultIcon = (p: IconProps) => (
     <path d="M12 14.5v2" />
   </Svg>
 );
+
+/** Board admin mode: locked */
+export const LockIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="5" y="10.5" width="14" height="10" rx="2.5" />
+    <path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3" />
+  </Svg>
+);
+
+/** Board admin mode: unlocked */
+export const UnlockIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="5" y="10.5" width="14" height="10" rx="2.5" />
+    <path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 6.8-1.2" />
+  </Svg>
+);

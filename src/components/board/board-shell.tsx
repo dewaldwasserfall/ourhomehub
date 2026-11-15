@@ -1,7 +1,9 @@
 /**
  * Frame around every Family board screen.
  *
- *   * Top bar: the clock and date, and the two tabs (Today, Calendar).
+ *   * Top bar: the clock and date, the two tabs (Today, Calendar) and the
+ *     admin lock (a parent's PIN unlocks adding and confirming; see
+ *     board-admin.tsx).
  *   * Dims after 2 minutes without a touch; a tap wakes it (the tap that
  *     wakes it does nothing else, so nobody ticks something by accident).
  *   * "Charge me" banner when the battery is low and not charging (Chrome on
@@ -14,6 +16,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { BoardAdminProvider, BoardLockButton } from "@/components/board/board-admin";
 import { useHousehold } from "@/components/household-context";
 import { dateKey, timeKey } from "@/lib/calendar/time";
 
@@ -93,30 +96,33 @@ export function BoardShell({ boardName, children }: { boardName: string; childre
   );
 
   return (
-    <div className="board" style={{ transform: `translate(${dx}px, ${dy}px)` }}>
-      <header className="board-top">
-        <div className="board-top__when">
-          <span className="board-top__time">{timeKey(now, household.timezone)}</span>
-          <span className="board-top__date">{dateLabel.format(new Date(`${today}T12:00:00Z`))}</span>
-        </div>
-        <nav className="board-tabs" aria-label={boardName}>
-          {tab("/board", "Today")}
-          {tab("/board/calendar", "Calendar")}
-        </nav>
-      </header>
+    <BoardAdminProvider>
+      <div className="board" style={{ transform: `translate(${dx}px, ${dy}px)` }}>
+        <header className="board-top">
+          <div className="board-top__when">
+            <span className="board-top__time">{timeKey(now, household.timezone)}</span>
+            <span className="board-top__date">{dateLabel.format(new Date(`${today}T12:00:00Z`))}</span>
+          </div>
+          <nav className="board-tabs" aria-label={boardName}>
+            {tab("/board", "Today")}
+            {tab("/board/calendar", "Calendar")}
+          </nav>
+          <BoardLockButton />
+        </header>
 
-      {lowBattery && (
-        <div className="board-battery" role="status">
-          Battery low: please charge the board tonight.
-        </div>
-      )}
+        {lowBattery && (
+          <div className="board-battery" role="status">
+            Battery low: please charge the board tonight.
+          </div>
+        )}
 
-      <div className="board-body">{children}</div>
+        <div className="board-body">{children}</div>
 
-      {/* The dim layer swallows the waking tap. */}
-      {dimmed && (
-        <button type="button" className="board-dim" aria-label="Wake the board" onClick={() => setDimmed(false)} />
-      )}
-    </div>
+        {/* The dim layer swallows the waking tap. */}
+        {dimmed && (
+          <button type="button" className="board-dim" aria-label="Wake the board" onClick={() => setDimmed(false)} />
+        )}
+      </div>
+    </BoardAdminProvider>
   );
 }

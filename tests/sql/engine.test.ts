@@ -10,6 +10,7 @@
  * (suggest, accept, dismiss, irregular items, items still being learned).
  */
 import { PGlite } from "@electric-sql/pglite";
+import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -25,6 +26,10 @@ const SUPABASE_STUB = `
   create role anon nologin;
   create role authenticated nologin;
   create role service_role nologin;
+
+  -- pgcrypto lives in the extensions schema, as on Supabase (PIN hashes).
+  create schema extensions;
+  create extension pgcrypto with schema extensions;
 
   create schema auth;
   create table auth.users (id uuid primary key, email text);
@@ -130,7 +135,7 @@ let householdId: string;
 let groceriesListId: string;
 
 beforeAll(async () => {
-  db = new PGlite();
+  db = new PGlite({ extensions: { pgcrypto } });
   await db.exec(SUPABASE_STUB);
 
   // Apply the schema and engine migrations. The realtime/cron migration needs
@@ -160,6 +165,7 @@ beforeAll(async () => {
     "20261114000700_member_ids_rijbewijs.sql",
     "20261114000800_dishwasher.sql",
     "20261115000100_reward_plans.sql",
+    "20261115000200_board_admin.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -1657,5 +1663,89 @@ describe("reward plans", () => {
     await expect(db.query(`select public.give_reward($1)`, [once])).rejects.toThrow();
     expect(await one(`select active from public.reward_plans where id = $1`, [once])).toEqual({ active: false });
     expect(await one(`select stars_used from public.reward_periods where plan_id = $1`, [once])).toEqual({ stars_used: 4 });
+  });
+});
+
+describe("board admin mode", () => {
+  it("unlocks with a parent's PIN, adds and confirms as that parent, blocks guessing and locks again", async () => {
+    await actAs("dewald");
+    const id = async (user: keyof typeof USERS) =>
+      (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS[user].id])).id;
+    const [kid, partner, aupair] = [await id("kid"), await id("partner"), await id("aupair")];
+    await actAsAdmin();
+    await db.query(`update public.members set is_parent = (id = $1) where id in ($1, $2)`, [partner, aupair]);
+
+    // Step 1: PINs. Parents only, 4-6 digits, not shared between parents.
+    await actAs("kid");
+    await expect(db.query(`select public.set_board_pin('1234')`)).rejects.toThrow(/parents_only/);
+    await actAs("aupair");
+    await expect(db.query(`select public.set_board_pin('1234')`)).rejects.toThrow(/parents_only/);
+    await actAs("dewald");
+    await expect(db.query(`select public.set_board_pin('12a4')`)).rejects.toThrow(/pin_format/);
+    await db.query(`select public.set_board_pin('1234')`);
+    expect(await one(`select public.has_board_pin() as has`)).toEqual({ has: true });
+    // Nobody reads the hashes, not even the parent.
+    expect(await all(`select * from public.board_pins`)).toHaveLength(0);
+    await actAs("partner");
+    await expect(db.query(`select public.set_board_pin('1234')`)).rejects.toThrow(/pin_taken/);
+    await db.query(`select public.set_board_pin('5678')`);
+
+    // Step 2: locked, the board can't add or confirm.
+    await actAs("board");
+    await expect(db.query(`select public.board_add_entry($1, 'Milk')`, [groceriesListId])).rejects.toThrow(/board_locked/);
+    expect(await all(`select * from public.board_pins`)).toHaveLength(0);
+
+    // Step 3: four wrong PINs count down; the fifth blocks, even the right PIN.
+    type Answer = { ok: boolean; error?: string; left?: number; member_id?: string };
+    const unlock = async (pin: string) => (await one<{ r: Answer }>(`select public.board_unlock($1) as r`, [pin])).r;
+    expect(await unlock("0000")).toMatchObject({ ok: false, error: "wrong_pin", left: 4 });
+    for (let i = 0; i < 3; i++) await unlock("0000");
+    expect(await unlock("0000")).toMatchObject({ ok: false, error: "blocked" });
+    expect(await unlock("5678")).toMatchObject({ ok: false, error: "blocked" });
+    await actAsAdmin();
+    await db.query(`update public.board_unlocks set blocked_until = now() - interval '1 second'`);
+
+    // Step 4: the right PIN unlocks as that parent.
+    await actAs("board");
+    expect(await unlock("5678")).toMatchObject({ ok: true, member_id: partner });
+
+    // Step 5: groceries and to-dos are added as the parent, then the board is the board again.
+    const milk = (await one<{ id: string }>(`select public.board_add_entry($1, 'Milk') as id`, [groceriesListId])).id;
+    const todoList = (await one<{ id: string }>(`select id from public.lists where type = 'todo' limit 1`)).id;
+    const todo = (await one<{ id: string }>(`select public.board_add_entry($1, 'Tidy room', null, $2) as id`, [todoList, kid])).id;
+    expect(await one(`select auth.uid() as uid`)).toEqual({ uid: USERS.board.id });
+    await actAsAdmin();
+    expect(await one(`select added_by, source::text from public.list_entries where id = $1`, [milk])).toEqual({ added_by: USERS.partner.id, source: "manual" });
+    expect(await one(`select assigned_to from public.list_entries where id = $1`, [todo])).toEqual({ assigned_to: kid });
+
+    // Step 6: a kid's waiting tick is confirmed on the board, by the parent.
+    await actAs("dewald");
+    const chore = (
+      await one<{ id: string }>(`insert into public.chores (household_id, title, every_n, unit, next_due, assigned_to) values ($1, 'Feed cat', 1, 'day', current_date, $2) returning id`, [
+        householdId,
+        kid,
+      ])
+    ).id;
+    await actAs("board");
+    await db.query(`select public.board_set_completion('chore', $1, current_date, true, $2)`, [chore, kid]);
+    await db.query(`select public.board_set_entry($1, true, $2)`, [todo, kid]);
+    expect(await one(`select public.board_review_tick('chore', $1, true) as n`, [chore])).toEqual({ n: 1 });
+    expect(await one(`select public.board_review_tick('todo', $1, false) as n`, [todo])).toEqual({ n: 1 });
+    await actAsAdmin();
+    expect(await one(`select pending, confirmed_by from public.completions where item_id = $1`, [chore])).toEqual({ pending: false, confirmed_by: partner });
+    expect(await one(`select status::text, pending from public.list_entries where id = $1`, [todo])).toEqual({ status: "open", pending: false });
+
+    // Step 7: once the time runs out (or on Lock), it's locked again.
+    await db.query(`update public.board_unlocks set until = now() - interval '1 second'`);
+    await actAs("board");
+    expect(await one(`select public.board_touch() as t`)).toEqual({ t: null });
+    await expect(db.query(`select public.board_add_entry($1, 'Eggs')`, [groceriesListId])).rejects.toThrow(/board_locked/);
+    expect(await unlock("1234")).toMatchObject({ ok: true });
+    await db.query(`select public.board_lock()`);
+    await expect(db.query(`select public.board_review_tick('chore', $1, true)`, [chore])).rejects.toThrow(/board_locked/);
+
+    // People can't use the board's unlock.
+    await actAs("dewald");
+    await expect(db.query(`select public.board_unlock('1234')`)).rejects.toThrow(/not_a_board/);
   });
 });
