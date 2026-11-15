@@ -293,22 +293,20 @@ export default function BoardTodayPage() {
         )}
         {columns.map((col) => {
           const person = memberById(col.memberId);
-          const star = person && person.role === "child" ? stars.stats[person.id] : undefined;
-          // A child's headline reward plan: "3/5 ★ Screen time" (or the star total without one).
-          const plan = person && person.role === "child" ? rewards.headline(person.id) : undefined;
-          const planProgress = plan ? rewards.progress[plan.id] : undefined;
-          const almost = !!plan && rewardStatus(planProgress) === "going" && oneMoreStar(plan, planProgress);
+          const isKid = person?.role === "child";
+          const star = isKid ? stars.stats[person.id] : undefined;
+          // A child's rewards come first: that's what the board is for.
+          const kidPlans = isKid ? rewards.plansFor(person.id) : [];
           return (
-            <div key={col.memberId ?? "anyone"} className={`board-col ${almost ? "board-col--almost" : ""}`}>
+            <div key={col.memberId ?? "anyone"} className={`board-col ${isKid ? "board-col--kid" : ""}`}>
               <header className="board-col__head">
                 {person ? <Avatar member={person} /> : <span className="board-col__anyone" aria-hidden="true">?</span>}
                 <span className="board-col__name">{person ? person.display_name.split(" ")[0] : "Anyone"}</span>
-                {plan ? (
-                  <span className="board-col__stars" title={plan.title}>
-                    {rewardStatus(planProgress) === "going" ? progressShort(plan, planProgress) : "🎉"}
+                {star && (
+                  <span className="board-col__stars" aria-label={`${star.earned} stars${star.streak > 1 ? `, ${star.streak}-day streak` : ""}`}>
+                    ★ {star.earned}
+                    {star.streak > 1 && <span className="board-col__streak"> 🔥{star.streak}</span>}
                   </span>
-                ) : (
-                  star && <span className="board-col__stars">★ {star.earned}</span>
                 )}
                 {person && pops[person.id] && (
                   <span key={pops[person.id]} className="board-col__pop" aria-hidden="true">
@@ -316,20 +314,43 @@ export default function BoardTodayPage() {
                   </span>
                 )}
               </header>
-              {plan && (
-                <span className="board-col__goal">
-                  {rewardStatus(planProgress) === "earned"
-                    ? `Earned: ${plan.title}`
-                    : rewardStatus(planProgress) === "given"
-                      ? `${plan.title} ✓`
-                      : almost
-                        ? `1 more ★! ${plan.title}`
-                        : plan.title}
-                </span>
+
+              {/* The child's rewards: each with its progress */}
+              {isKid && (
+                <div className="board-rewards">
+                  {kidPlans.length === 0 && <p className="board-muted board-rewards__none">No rewards set up yet.</p>}
+                  {kidPlans.map((p) => {
+                    const pr = rewards.progress[p.id];
+                    const status = rewardStatus(pr);
+                    const almost = status === "going" && oneMoreStar(p, pr);
+                    const pct = pr && pr.target ? Math.min(100, (pr.progress / pr.target) * 100) : 0;
+                    return (
+                      <div key={p.id} className={`board-reward board-reward--${status} ${almost ? "board-reward--almost" : ""}`}>
+                        <div className="board-reward__top">
+                          <span className="board-reward__title">{p.title}</span>
+                          <span className="board-reward__count">
+                            {status === "earned" ? "🎉 Earned!" : status === "given" ? "Given ✓" : progressShort(p, pr)}
+                          </span>
+                        </div>
+                        <div className="board-reward__bar" aria-hidden="true">
+                          <span style={{ width: `${status === "going" ? pct : 100}%` }} />
+                        </div>
+                        <span className="board-reward__when">
+                          {almost ? "1 more ★!" : p.period === "day" ? "Today" : p.period === "week" ? "This week" : "Savings goal"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
-              <div className="board-col__progress" aria-label={`${col.doneCount} of ${col.items.length} done`}>
-                <span style={{ width: `${(col.doneCount / col.items.length) * 100}%` }} />
-              </div>
+
+              {col.items.length > 0 ? (
+                <div className="board-col__progress" aria-label={`${col.doneCount} of ${col.items.length} done`}>
+                  <span style={{ width: `${(col.doneCount / col.items.length) * 100}%` }} />
+                </div>
+              ) : (
+                <p className="board-muted board-col__empty">Nothing to do today.</p>
+              )}
               <ul className="board-list">
                 {col.items.map((item) => (
                   <li key={item.key}>
@@ -349,7 +370,7 @@ export default function BoardTodayPage() {
                           <span className="board-item__note">{admin ? "Tap to confirm" : "Waiting for a grown-up"}</span>
                         )}
                         {item.state === "open" && item.overdue && <span className="board-item__note">Late</span>}
-                        {col.memberId === null || item.assignee !== null || !item.doneFor ? null : (
+                        {item.assignee !== null || !item.doneFor ? null : (
                           <span className="board-item__note">Done by {memberById(item.doneFor)?.display_name.split(" ")[0]}</span>
                         )}
                       </span>

@@ -164,18 +164,24 @@ export function boardColumns(input: {
     }
   }
 
-  // Step 2e: into columns. A ticked unassigned item moves to the column of
-  //          whoever did it, so their progress shows where they look.
-  const order = [...members.filter((m) => m.role === "child"), ...members.filter((m) => m.role !== "child")];
-  const columnOf = (item: BoardItem) => item.assignee ?? (item.state !== "open" ? item.doneFor : null);
-  const columns: BoardColumn[] = [...order.map((m) => m.id), null].map((memberId) => {
+  // Step 2e: into columns. The board is for the kids: one column per child
+  //          (always, even with nothing to do, so their stars and rewards
+  //          show), then "Anyone". Adults' own tasks stay on their phones.
+  //          An unassigned item a child ticked moves to that child's column,
+  //          so their progress shows where they look; one an adult ticked
+  //          stays under Anyone.
+  const kids = members.filter((m) => m.role === "child");
+  const kidIds = new Set(kids.map((m) => m.id));
+  const columnOf = (item: BoardItem) =>
+    item.assignee ?? (item.state !== "open" && item.doneFor && kidIds.has(item.doneFor) ? item.doneFor : null);
+  const columns: BoardColumn[] = [...kids.map((m) => m.id), null].map((memberId) => {
     const mine = items
       .filter((i) => columnOf(i) === memberId)
       // Open first (late ones on top), then waiting, then done.
       .sort((a, b) => rank(a) - rank(b) || a.title.localeCompare(b.title));
     return { memberId, items: mine, doneCount: mine.filter((i) => i.state !== "open").length };
   });
-  return columns.filter((c) => c.items.length > 0);
+  return columns.filter((c) => c.memberId !== null || c.items.length > 0);
 }
 
 function rank(item: BoardItem): number {

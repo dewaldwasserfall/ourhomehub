@@ -46,9 +46,15 @@ function columns(opts: { completions?: Completion[]; todos?: BoardTodo[]; chores
 }
 
 describe("board columns", () => {
-  it("puts children first, then adults, then Anyone; empty columns are left out", () => {
+  it("shows every child (even with nothing to do) and Anyone; adults' own tasks stay off the board", () => {
     const cols = columns({ todos: [todo("Feed the fish")], chores: [chore("Bins out", today, "dewald")] });
-    expect(cols.map((c) => c.memberId)).toEqual(["shannon", "lennon", "dewald", null]);
+    expect(cols.map((c) => c.memberId)).toEqual(["shannon", "lennon", null]);
+    expect(cols.flatMap((c) => c.items.map((i) => i.title))).not.toContain("Bins out");
+    // Nothing for anyone: the children's columns still show; Anyone doesn't.
+    expect(boardColumns({ plan: { routines: [], steps: [], chores: [], zones: [], zoneTasks: [], completions: [] }, todos: [], members, today, mode: "school", zoneRotationStart: null }).map((c) => c.memberId)).toEqual([
+      "shannon",
+      "lennon",
+    ]);
     // A step falls back to the routine owner.
     expect(cols[0].items.map((i) => i.title)).toEqual(["Brush teeth"]);
     expect(cols[1].items.map((i) => i.title)).toEqual(["Pack bag"]);
