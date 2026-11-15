@@ -130,14 +130,21 @@ export default function BoardTodayPage() {
       supabase.from("lists").select("id, name, is_default, sort_order").eq("type", "shopping"),
       supabase
         .from("list_entries")
-        .select("id, list_id, text, quantity, category, list:lists!inner(type)")
+        // The aisle lives on the catalogue item, not the list line.
+        .select("id, list_id, text, quantity, item:items(category), list:lists!inner(type)")
         .eq("list.type", "shopping")
         .eq("status", "open"),
     ]);
     if (!infoRes.error) setDayInfo(((infoRes.data ?? []) as DayInfo[])[0] ?? null);
     if (!todoRes.error) setTodos((todoRes.data ?? []) as unknown as BoardTodo[]);
-    if (!listRes.error && !groceryRes.error)
-      setGroceries({ lists: (listRes.data ?? []) as GroceryList[], entries: (groceryRes.data ?? []) as unknown as GroceryEntry[] });
+    if (listRes.error || groceryRes.error) console.error("[board] groceries", listRes.error ?? groceryRes.error);
+    else {
+      const rows = (groceryRes.data ?? []) as unknown as Array<Omit<GroceryEntry, "category"> & { item: { category: string } | null }>;
+      setGroceries({
+        lists: (listRes.data ?? []) as GroceryList[],
+        entries: rows.map(({ item, ...e }) => ({ ...e, category: item?.category ?? "Other" })),
+      });
+    }
   }, [supabase, today]);
 
   useEffect(() => {
