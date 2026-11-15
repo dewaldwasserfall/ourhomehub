@@ -5,8 +5,13 @@
  *      recognition, British English). What you say appears as you say it.
  *   2. When you stop talking, it's sent to /api/assistant (Claude, acting
  *      with this device's own sign-in).
- *   3. The reply shows, and is read aloud (the browser's built-in voice).
- *      "Ask again" listens for the next one.
+ *   3. The reply shows, and is read aloud (the browser's built-in voice, or
+ *      Fully Kiosk's on the wall tablet).
+ *   4. A conversation: while the sheet is open, each question goes with the
+ *      last few back-and-forths, so "Hardware" can answer "Which list?". If
+ *      the helper asked something back, the mic opens again by itself once
+ *      it has finished speaking; otherwise "Ask again" listens. Closing the
+ *      sheet forgets the conversation (the next person starts fresh).
  *
  * No microphone or no speech recognition (some browsers)? Type instead:
  * the text field always works.
@@ -20,6 +25,7 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useHousehold } from "@/components/household-context";
 import { Sheet } from "@/components/sheet";
+import { MAX_HISTORY_TURNS, asksBack, type HistoryTurn } from "@/lib/assistant/core";
 
 // Step 0: the bits of the Web Speech API we use (not in TypeScript's DOM types).
 interface RecognitionResultLike {
@@ -125,14 +131,22 @@ export function speechRoute(): SpeechRoute {
 // bind() as a string, so the events call this global.
 let fullyStarted = 0;
 let fullyReady = false;
+/** Called when Fully has finished reading the current reply. */
+let fullyDone: (() => void) | null = null;
 function readyFully(kiosk: FullyLike) {
   if (fullyReady) return;
   fullyReady = true;
   (window as unknown as { __hhTts?: (e: string) => void }).__hhTts = (e) => {
     if (e === "start") fullyStarted = Date.now();
+    if (e === "done" && fullyDone) {
+      const done = fullyDone;
+      fullyDone = null;
+      done();
+    }
   };
   try {
     kiosk.bind?.("ttsUtteranceStart", "window.__hhTts && window.__hhTts('start')");
+    kiosk.bind?.("ttsUtteranceDone", "window.__hhTts && window.__hhTts('done')");
     kiosk.initTts?.(); // newer Fully versions: start the speech engine early
   } catch {
     // Older Fully: speaking still works without these.
@@ -140,9 +154,20 @@ function readyFully(kiosk: FullyLike) {
 }
 
 /**
- * Read a reply aloud. onProblem gets a sentence to show when it can't.
+ * Read a reply aloud. onProblem gets a sentence to show when it can't;
+ * onDone runs once it has finished (or couldn't speak at all), at most once.
  */
-async function speak(text: string, onProblem: (message: string) => void = () => {}) {
+async function speak(text: string, onProblem: (message: string) => void = () => {}, onDone: () => void = () => {}) {
+  // Step A: onDone exactly once, with a safety net in case no "finished"
+  //         event ever comes (about 80 ms a character, plus slack).
+  let finished = false;
+  const done = () => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(safety);
+    onDone();
+  };
+  const safety = setTimeout(done, text.length * 80 + 5000);
   try {
     // Step 0: inside Fully Kiosk: use its speech (the device's own voice).
     //         British English first; if nothing starts within 2.5 s (that
@@ -150,6 +175,7 @@ async function speak(text: string, onProblem: (message: string) => void = () => 
     const kiosk = fully();
     if (kiosk?.textToSpeech) {
       readyFully(kiosk);
+      fullyDone = done;
       const asked = Date.now();
       kiosk.stopTextToSpeech?.();
       kiosk.textToSpeech(text, "en_GB");
@@ -158,15 +184,18 @@ async function speak(text: string, onProblem: (message: string) => void = () => 
       if (fullyStarted >= asked) return;
       kiosk.textToSpeech(text);
       await new Promise((r) => setTimeout(r, 2500));
-      if (fullyStarted < asked) onProblem("The tablet didn't read it out. Check its text-to-speech voice in Android Settings.");
+      if (fullyStarted < asked) {
+        onProblem("The tablet didn't read it out. Check its text-to-speech voice in Android Settings.");
+        done();
+      }
       return;
     }
     if (!window.speechSynthesis) {
       onProblem("This app can't read replies aloud. In Fully Kiosk, turn on Advanced Web Settings → Enable JavaScript Interface, then reload.");
+      done();
       return;
     }
     const synth = window.speechSynthesis;
-    if (!synth) return;
     // Step 1: stop anything still talking, then give Chrome a moment.
     if (synth.speaking || synth.pending) {
       synth.cancel();
@@ -183,10 +212,13 @@ async function speak(text: string, onProblem: (message: string) => void = () => 
     }
     u.rate = 1;
     u.volume = 1;
+    u.onend = done;
+    u.onerror = done;
     synth.resume(); // Chrome can leave the queue paused
     synth.speak(u);
   } catch {
     // No voice on this device: the reply is still on screen.
+    done();
   }
 }
 
@@ -199,6 +231,11 @@ export function VoiceAssistant({ variant }: { variant: "board" | "fab" }) {
   const [note, setNote] = useState<string | null>(null);
   const recognition = useRef<RecognitionLike | null>(null);
   const finalText = useRef("");
+  // The conversation while the sheet is open (cleared on close).
+  const history = useRef<HistoryTurn[]>([]);
+  const isOpen = useRef(false);
+  // listen() is defined below ask(); ask() reaches it through this ref.
+  const listenRef = useRef<(auto?: boolean) => void>(() => {});
 
   // Step 1: send what was said (or typed) and read the answer out.
   const ask = useCallback(async (text: string) => {
@@ -211,13 +248,19 @@ export function VoiceAssistant({ variant }: { variant: "board" | "fab" }) {
       const res = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: value }),
+        body: JSON.stringify({ text: value, history: history.current }),
       });
       const json = (await res.json().catch(() => ({}))) as { reply?: string; message?: string };
       const answer = res.ok ? (json.reply ?? "Done.") : (json.message ?? "Something went wrong. Try again.");
       setReply(answer);
       setPhase("answered");
-      void speak(answer, setNote);
+      // Remember this exchange (only real answers) for the follow-up.
+      if (res.ok) history.current = [...history.current, { role: "user" as const, text: value }, { role: "assistant" as const, text: answer }].slice(-MAX_HISTORY_TURNS);
+      // Asked something back? Open the mic again once it's done talking.
+      const again = res.ok && asksBack(answer);
+      void speak(answer, setNote, () => {
+        if (again && isOpen.current) listenRef.current(true);
+      });
     } catch {
       setReply("No connection. Check the internet and try again.");
       setPhase("answered");
@@ -225,13 +268,14 @@ export function VoiceAssistant({ variant }: { variant: "board" | "fab" }) {
   }, []);
 
   // Step 2: listen once; send when the person stops talking.
-  const listen = useCallback(() => {
+  const listen = useCallback((auto = false) => {
     const Ctor = recognitionCtor();
     // Stop a reply that's still being read out (but don't cancel the silent
     // primer: that's what unlocks speaking for the next reply).
     if (window.speechSynthesis?.speaking && Date.now() - primedAt > 1000) window.speechSynthesis.cancel();
     fully()?.stopTextToSpeech?.();
-    setReply(null);
+    // Opened by itself after a question: keep the question on screen.
+    if (!auto) setReply(null);
     setHeard("");
     setNote(null);
     finalText.current = "";
@@ -253,7 +297,7 @@ export function VoiceAssistant({ variant }: { variant: "board" | "fab" }) {
     };
     rec.onerror = (e) => {
       if (e.error === "not-allowed" || e.error === "service-not-allowed") setNote("The microphone is blocked. Allow it in the browser's site settings, or type instead.");
-      else if (e.error === "no-speech") setNote("I didn't hear anything. Tap Ask again.");
+      else if (e.error === "no-speech") setNote(auto ? "Tap Ask again to answer." : "I didn't hear anything. Tap Ask again.");
       else if (e.error !== "aborted") setNote("I didn't catch that. Tap Ask again, or type it.");
     };
     rec.onend = () => {
@@ -269,10 +313,13 @@ export function VoiceAssistant({ variant }: { variant: "board" | "fab" }) {
       setPhase("idle");
     }
   }, [ask]);
+  listenRef.current = listen;
 
   // Step 3: open and close.
   const start = () => {
     primeSpeech(); // inside the tap: unlocks speaking for the reply later
+    history.current = []; // a new conversation
+    isOpen.current = true;
     setOpen(true);
     setTyped("");
     listen();
@@ -282,6 +329,9 @@ export function VoiceAssistant({ variant }: { variant: "board" | "fab" }) {
     recognition.current = null;
     window.speechSynthesis?.cancel();
     fully()?.stopTextToSpeech?.();
+    fullyDone = null;
+    history.current = [];
+    isOpen.current = false;
     setOpen(false);
     setPhase("idle");
   };
@@ -326,7 +376,7 @@ export function VoiceAssistant({ variant }: { variant: "board" | "fab" }) {
             className={`voice__mic ${phase === "listening" ? "voice__mic--on" : ""}`}
             onClick={() => {
               primeSpeech();
-              listen();
+              listen(false);
             }} disabled={phase === "thinking"}>
             <MicIcon size={28} />
             <span>{phase === "listening" ? "Listening…" : "Ask again"}</span>

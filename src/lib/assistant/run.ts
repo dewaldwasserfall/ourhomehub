@@ -29,6 +29,7 @@ import {
   spokenError,
   systemPrompt,
   type AssistantContext,
+  type HistoryTurn,
 } from "./core";
 
 const API_URL = "https://api.anthropic.com/v1/messages";
@@ -46,8 +47,15 @@ export interface AssistantResult {
   changed: boolean;
 }
 
-export async function runAssistant(supabase: SupabaseClient, ctx: AssistantContext, text: string, apiKey: string): Promise<AssistantResult> {
-  const messages: Message[] = [{ role: "user", content: text }];
+export async function runAssistant(
+  supabase: SupabaseClient,
+  ctx: AssistantContext,
+  text: string,
+  apiKey: string,
+  history: HistoryTurn[] = [],
+): Promise<AssistantResult> {
+  // Step 0: the conversation so far (while the sheet is open), then the new question.
+  const messages: Message[] = [...history.map((t) => ({ role: t.role, content: t.text })), { role: "user", content: text }];
   let changed = false;
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {

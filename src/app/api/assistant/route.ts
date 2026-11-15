@@ -1,5 +1,5 @@
 /**
- * POST /api/assistant   { text: "add eggs to the grocery list" }
+ * POST /api/assistant   { text: "add eggs to the grocery list", history?: [{ role, text }] }
  *   → { reply: "Added eggs to Groceries.", changed: true }
  *
  * The voice helper (see src/lib/assistant). Works for:
@@ -12,7 +12,7 @@
  * database's rules decide what each request may do.
  */
 import { NextResponse, type NextRequest } from "next/server";
-import { MAX_REQUEST_CHARS, type AssistantContext, type AssistantList, type AssistantMember } from "@/lib/assistant/core";
+import { MAX_REQUEST_CHARS, cleanHistory, type AssistantContext, type AssistantList, type AssistantMember } from "@/lib/assistant/core";
 import { runAssistant } from "@/lib/assistant/run";
 import { jsonError } from "@/lib/calendar/caller";
 import { dateKey } from "@/lib/calendar/time";
@@ -26,8 +26,11 @@ export async function POST(request: NextRequest) {
   if (!apiKey) return jsonError(503, "not_configured", "The voice helper isn't set up yet.");
 
   // Step 1: what was said.
-  const body = (await request.json().catch(() => null)) as { text?: unknown } | null;
+  //         Plus the conversation so far, while the sheet is open (the
+  //         browser keeps it; nothing is stored here).
+  const body = (await request.json().catch(() => null)) as { text?: unknown; history?: unknown } | null;
   const text = typeof body?.text === "string" ? body.text.trim().slice(0, MAX_REQUEST_CHARS) : "";
+  const history = cleanHistory(body?.history);
   if (!text) return jsonError(400, "empty", "I didn't catch that.");
 
   // Step 2: who's asking: a person, or a board?
@@ -61,6 +64,6 @@ export async function POST(request: NextRequest) {
   };
 
   // Step 4: ask, act, answer.
-  const result = await runAssistant(supabase, ctx, text, apiKey);
+  const result = await runAssistant(supabase, ctx, text, apiKey, history);
   return NextResponse.json(result);
 }

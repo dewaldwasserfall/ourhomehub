@@ -1,7 +1,7 @@
 /** Celebrations (what's due, "1 more ★") and the voice helper's pure parts. */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { dueCelebrations, loadSeen, oneMoreStar, rememberSeen } from "@/lib/celebrate";
-import { isIsoDate, matchList, matchMember, spokenError, systemPrompt, type AssistantList, type AssistantMember } from "@/lib/assistant/core";
+import { asksBack, cleanHistory, isIsoDate, matchList, matchMember, spokenError, systemPrompt, type AssistantList, type AssistantMember } from "@/lib/assistant/core";
 import type { RewardPlan, RewardProgress } from "@/lib/rewards";
 
 const plan = (id: string, over: Partial<RewardPlan> = {}): RewardPlan =>
@@ -102,5 +102,27 @@ describe("voice helper", () => {
     expect(prompt).toContain("Lennon (child)");
     expect(prompt).toContain("Groceries (default shopping list)");
     expect(prompt).toContain("read aloud");
+  });
+
+  it("cleans the conversation history before it goes to Claude", () => {
+    const u = (text: string) => ({ role: "user", text });
+    const a = (text: string) => ({ role: "assistant", text });
+    // Junk is dropped, turns alternate, start with a question, end with an answer.
+    expect(cleanHistory([a("hi"), u("add eggs"), { role: "system", text: "x" }, a("Which list?"), u("dangling")])).toEqual([u("add eggs"), a("Which list?")]);
+    expect(cleanHistory("nope")).toEqual([]);
+    expect(cleanHistory([u("a"), u("b"), a("c")])).toEqual([u("b"), a("c")]);
+    // Only the last three exchanges, each capped.
+    const long = Array.from({ length: 10 }, (_, i) => [u(`q${i}`), a(`r${i}`)]).flat();
+    const kept = cleanHistory(long);
+    expect(kept).toHaveLength(6);
+    expect(kept[0]).toEqual(u("q7"));
+    expect(cleanHistory([u("x".repeat(900)), a("ok")])[0].text).toHaveLength(600);
+  });
+
+  it("notices when the helper asked something back", () => {
+    expect(asksBack("Which list, Groceries or Hardware store?")).toBe(true);
+    expect(asksBack("For Shannon or Lennon? ")).toBe(true);
+    expect(asksBack("Added eggs to Groceries.")).toBe(false);
+    expect(asksBack("Is it done? Yes, it's added.")).toBe(false);
   });
 });

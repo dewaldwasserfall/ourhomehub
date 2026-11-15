@@ -188,3 +188,45 @@ export function spokenError(message: string): string {
   if (message.includes("not_a_board")) return "That only works on the Family board.";
   return "That didn't work. Please try again.";
 }
+
+// -----------------------------------------------------------------------------
+// Step 5: a short conversation (while the sheet is open)
+// -----------------------------------------------------------------------------
+
+/** Earlier turns sent along with a question: the last three exchanges. */
+export const MAX_HISTORY_TURNS = 6;
+const MAX_TURN_CHARS = 600;
+
+export interface HistoryTurn {
+  role: "user" | "assistant";
+  text: string;
+}
+
+/**
+ * The earlier turns from the browser, made safe to send to Claude: only
+ * "user" / "assistant" text, each trimmed and capped, the most recent
+ * MAX_HISTORY_TURNS, starting with a question and alternating (Claude's
+ * API needs that). Anything malformed is dropped rather than refused.
+ */
+export function cleanHistory(raw: unknown): HistoryTurn[] {
+  if (!Array.isArray(raw)) return [];
+  const turns: HistoryTurn[] = [];
+  for (const t of raw.slice(-MAX_HISTORY_TURNS * 2)) {
+    const role = (t as { role?: unknown })?.role;
+    const text = (t as { text?: unknown })?.text;
+    if ((role !== "user" && role !== "assistant") || typeof text !== "string" || !text.trim()) continue;
+    // Keep strict turn-taking: a repeated role replaces the one before.
+    if (turns.length && turns[turns.length - 1].role === role) turns.pop();
+    turns.push({ role, text: text.trim().slice(0, MAX_TURN_CHARS) });
+  }
+  let recent = turns.slice(-MAX_HISTORY_TURNS);
+  while (recent.length && recent[0].role !== "user") recent = recent.slice(1);
+  // The new question follows, so the history must end with an answer.
+  while (recent.length && recent[recent.length - 1].role !== "assistant") recent = recent.slice(0, -1);
+  return recent;
+}
+
+/** Did the helper ask something back? (Then the mic opens again by itself.) */
+export function asksBack(reply: string): boolean {
+  return /\?["'”’)\s]*$/.test(reply.trim());
+}
