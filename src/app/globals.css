@@ -3802,3 +3802,54 @@ textarea.input {
     animation: none;
   }
 }
+
+/* Board: a column's header and rewards open it full screen */
+.board-col__open {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: -6px;
+  padding: 6px;
+  border-radius: 14px;
+  cursor: pointer;
+}
+.board-col__open:active {
+  background: var(--fill);
+}
+.board-col__open:focus-visible {
+  outline: 3px solid var(--accent);
+}
+
+/* A column full screen: bigger rewards, tasks in two columns */
+.board-col--full {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px 24px;
+  gap: 16px;
+}
+.board-col--full .board-rewards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+.board-col--full .board-reward {
+  padding: 18px 20px;
+}
+.board-col--full .board-reward__title {
+  font-size: 24px;
+}
+.board-col--full .board-reward__count {
+  font-size: 24px;
+}
+.board-col--full .board-reward__bar {
+  height: 16px;
+  border-radius: 8px;
+}
+.board-col--full .board-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 10px;
+}
+.board-col--full .board-item__title {
+  font-size: 22px;
+}
