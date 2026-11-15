@@ -99,8 +99,27 @@ async function pickVoice(): Promise<SpeechSynthesisVoice | null> {
   return choose();
 }
 
+/**
+ * Fully Kiosk Browser (the wall tablet's kiosk app) shows pages in Android's
+ * WebView, which has no speechSynthesis. It offers its own text-to-speech to
+ * the page instead, when "Enable JavaScript Interface" is switched on in
+ * Fully (Advanced Web Settings; a Fully PLUS feature).
+ */
+interface FullyLike {
+  textToSpeech?: (text: string, localeOrVoice?: string) => void;
+  stopTextToSpeech?: () => void;
+}
+const fully = (): FullyLike | null => (typeof window === "undefined" ? null : ((window as unknown as { fully?: FullyLike }).fully ?? null));
+
 async function speak(text: string) {
   try {
+    // Step 0: inside Fully Kiosk: use its speech (the device's own voice).
+    const kiosk = fully();
+    if (kiosk?.textToSpeech) {
+      kiosk.stopTextToSpeech?.();
+      kiosk.textToSpeech(text, "en_GB");
+      return;
+    }
     const synth = window.speechSynthesis;
     if (!synth) return;
     // Step 1: stop anything still talking, then give Chrome a moment.
@@ -166,6 +185,7 @@ export function VoiceAssistant({ variant }: { variant: "board" | "fab" }) {
     // Stop a reply that's still being read out (but don't cancel the silent
     // primer: that's what unlocks speaking for the next reply).
     if (window.speechSynthesis?.speaking && Date.now() - primedAt > 1000) window.speechSynthesis.cancel();
+    fully()?.stopTextToSpeech?.();
     setReply(null);
     setHeard("");
     setNote(null);
@@ -216,6 +236,7 @@ export function VoiceAssistant({ variant }: { variant: "board" | "fab" }) {
     recognition.current?.abort();
     recognition.current = null;
     window.speechSynthesis?.cancel();
+    fully()?.stopTextToSpeech?.();
     setOpen(false);
     setPhase("idle");
   };
