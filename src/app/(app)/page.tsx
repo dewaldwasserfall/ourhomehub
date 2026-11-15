@@ -8,7 +8,8 @@
  *                   tomorrow's first event once today's are over
  *   3. Routines     the routines for this time of day open, others folded
  *   4. To do        to-dos and chores that are due, overdue or undated
- *   5. Zone         this fortnight's zone, progress and the next tasks
+ *   5. Zone         this fortnight's zone: everyone's tasks, as All (default),
+ *                   Next 3 or Hidden
  *   6. Groceries    one line that opens the list
  *
  * Adults also get "Waiting for you": ticks the kids made on the Family board
@@ -331,7 +332,16 @@ export default function TodayPage() {
       assignee: t.assigned_to,
       done: isDone("zone_task", t.id, fortnight.start),
     }));
-    return { zone: active, fortnight, total: items.length, doneCount: items.filter((i) => i.done).length, mine: items.filter((i) => isMine(i.assignee)) };
+    // all: everyone's tasks (the zone is a shared job, so the card shows the
+    // whole picture); mine: just what's yours, for "nothing to do today".
+    return {
+      zone: active,
+      fortnight,
+      total: items.length,
+      doneCount: items.filter((i) => i.done).length,
+      all: items,
+      mine: items.filter((i) => isMine(i.assignee)),
+    };
   }, [household.zone_rotation_start, today, plan.zones, plan.zoneTasks, isDone, isMine]);
 
   // ---------------------------------------------------------------------------
@@ -419,6 +429,10 @@ export default function TodayPage() {
       onToggle={() => toggle(item)}
     />
   );
+
+  // The zone card's view: everything (default), the next three, or folded
+  // away to one line. Not saved: it starts on All each time.
+  const [zoneView, setZoneView] = useState<"all" | "next" | "hidden">("all");
 
   // Folded routines: by default the unfinished ones for this time of day are
   // open; once someone taps a header, their choice is kept.
@@ -690,29 +704,64 @@ export default function TodayPage() {
       </div>
 
       <div className="today-col">
-      {/* 5. This fortnight's zone */}
-      {zone && zone.mine.length > 0 && (
+      {/* 5. This fortnight's zone: everyone's tasks, in one of three views */}
+      {zone && zone.all.length > 0 && (
         <section className="section">
           <div className="section__header">
-            <span className="section__header-title">Zone: {zone.zone.name}</span>
-            <span>
-              {zone.doneCount} of {zone.total} done
+            {/* Step 5a: the title folds the card away (and back) */}
+            <button
+              type="button"
+              className="section__header-title zone-toggle"
+              aria-expanded={zoneView !== "hidden"}
+              onClick={() => setZoneView((v) => (v === "hidden" ? "all" : "hidden"))}
+            >
+              <ChevronDownIcon size={14} style={{ transform: zoneView === "hidden" ? "rotate(-90deg)" : "none", transition: "transform .2s" }} />
+              Zone: {zone.zone.name}
+            </button>
+            {/* Step 5b: progress, and Next 3 / All while it's open */}
+            <span className="zone-views">
+              {zoneView === "hidden" ? (
+                <span>
+                  {zone.doneCount} of {zone.total} done
+                </span>
+              ) : (
+                <>
+                  <span>
+                    {zone.doneCount}/{zone.total}
+                  </span>
+                  <span className="zone-views__switch" role="group" aria-label="How many zone tasks to show">
+                    <button type="button" aria-pressed={zoneView === "next"} onClick={() => setZoneView("next")}>
+                      Next 3
+                    </button>
+                    <button type="button" aria-pressed={zoneView === "all"} onClick={() => setZoneView("all")}>
+                      All
+                    </button>
+                  </span>
+                </>
+              )}
             </span>
           </div>
-          <div className="group">
-            <AnimatePresence initial={false}>
-              {/* Next three not done, then anything ticked today stays visible */}
-              {[...zone.mine.filter((i) => !i.done).slice(0, 3), ...zone.mine.filter((i) => i.done && settling.has(i.key))].map(tickRow)}
-            </AnimatePresence>
-            {zone.mine.every((i) => i.done) && (
-              <div className="row" style={{ color: "var(--ink-2)" }}>
-                <span className="row__body">All done for this fortnight</span>
+          {zoneView !== "hidden" && (
+            <>
+              <div className="group">
+                <AnimatePresence initial={false}>
+                  {zoneView === "all"
+                    ? // Step 5c: All: open tasks first, then the finished ones (untick a mistake there).
+                      [...zone.all.filter((i) => !i.done), ...zone.all.filter((i) => i.done)].map(tickRow)
+                    : // Step 5d: Next 3: three open tasks, plus anything ticked a moment ago.
+                      [...zone.all.filter((i) => !i.done).slice(0, 3), ...zone.all.filter((i) => i.done && settling.has(i.key))].map(tickRow)}
+                </AnimatePresence>
+                {zoneView === "next" && zone.all.every((i) => i.done) && (
+                  <div className="row" style={{ color: "var(--ink-2)" }}>
+                    <span className="row__body">All done for this fortnight</span>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          <p className="section__footer">
-            Until {describeDay(zone.fortnight.end, today)}, day {zone.fortnight.day} of 14.
-          </p>
+              <p className="section__footer">
+                Until {describeDay(zone.fortnight.end, today)}, day {zone.fortnight.day} of 14.
+              </p>
+            </>
+          )}
         </section>
       )}
 
