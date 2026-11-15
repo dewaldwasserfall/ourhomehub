@@ -159,6 +159,7 @@ beforeAll(async () => {
     "20261114000600_smartthings.sql",
     "20261114000700_member_ids_rijbewijs.sql",
     "20261114000800_dishwasher.sql",
+    "20261115000100_reward_plans.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -1578,5 +1579,83 @@ describe("dishwasher", () => {
     expect(await finish()).toBeNull();
     await db.query(`select public.appliance_remove($1)`, [householdId]);
     expect(await all(`select * from public.appliance_connections`)).toHaveLength(0);
+  });
+});
+
+describe("reward plans", () => {
+  it("tracks daily and weekly goals from confirmed ticks, carries stars over when asked, and only parents give", async () => {
+    await actAs("dewald");
+    const id = async (user: keyof typeof USERS) =>
+      (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS[user].id])).id;
+    const [kid, partner] = [await id("kid"), await id("partner")];
+    const day = "2031-03-05"; // a Wednesday
+    const chore = async (title: string) =>
+      (await one<{ id: string }>(`insert into public.chores (household_id, title, every_n, unit, next_due, assigned_to) values ($1, $2, 1, 'day', $3, $4) returning id`, [householdId, title, day, kid])).id;
+    const [a, b, c] = [await chore("Bed"), await chore("Teeth"), await chore("Shoes")];
+
+    // Plans: daily 2 stars (no carry-over), weekly 3 stars (carry-over), all of a+b today.
+    const plan = async (sql: string, args: unknown[]) => (await one<{ id: string }>(sql, args)).id;
+    const daily = await plan(
+      `insert into public.reward_plans (household_id, member_id, title, period, goal, stars_needed, carry_over, counts_from) values ($1, $2, 'Screen time', 'day', 'stars', 2, false, $3) returning id`,
+      [householdId, kid, "2031-03-01"],
+    );
+    const weekly = await plan(
+      `insert into public.reward_plans (household_id, member_id, title, period, goal, stars_needed, carry_over, counts_from) values ($1, $2, 'Pizza', 'week', 'stars', 3, true, $3) returning id`,
+      [householdId, kid, "2031-03-01"],
+    );
+    const tasks = await plan(
+      `insert into public.reward_plans (household_id, member_id, title, period, goal, counts, counts_from) values ($1, $2, 'Bonus', 'day', 'all_tasks', 'linked', $3) returning id`,
+      [householdId, kid, "2031-03-01"],
+    );
+    await db.query(`insert into public.reward_plan_tasks (plan_id, kind, task_id) values ($1, 'chore', $2), ($1, 'chore', $3)`, [tasks, a, b]);
+    // Plans are for children only.
+    await expect(
+      db.query(`insert into public.reward_plans (household_id, member_id, title, period, stars_needed) values ($1, $2, 'X', 'day', 1)`, [householdId, partner]),
+    ).rejects.toThrow(/reward_for_children_only/);
+
+    // Two ticks on the day (done_at pinned to that day).
+    for (const t of [a, b]) await db.query(`select public.set_completion('chore', $1, $2, true)`, [t, day]);
+    await actAsAdmin();
+    await db.query(`update public.completions set done_at = $1::date + time '10:00' where item_id in ($2, $3)`, [day, a, b]);
+
+    await actAs("dewald");
+    const progress = async (when: string) =>
+      Object.fromEntries(
+        (await all<{ plan_id: string; progress: number; target: number; given: boolean }>(`select * from public.reward_progress($1, $2)`, [kid, when])).map((r) => [
+          r.plan_id,
+          r,
+        ]),
+      );
+    let p = await progress(day);
+    expect(p[daily]).toMatchObject({ progress: 2, target: 2, given: false });
+    expect(p[weekly]).toMatchObject({ progress: 2, target: 3 });
+    expect(p[tasks]).toMatchObject({ progress: 2, target: 2 });
+
+    // Only parents give, and only when earned.
+    await actAs("partner");
+    await expect(db.query(`select public.give_reward($1)`, [daily])).rejects.toThrow(/parents_only/);
+    await actAs("dewald");
+    await db.query(`select public.set_parent($1, true)`, [partner]);
+    await expect(db.query(`select public.give_reward($1)`, [weekly])).rejects.toThrow(/not_earned_yet/);
+
+    // The next day: the daily plan starts at zero; the weekly one keeps the 2.
+    await db.query(`select public.set_completion('chore', $1, $2, true)`, [c, day]);
+    await actAsAdmin();
+    await db.query(`update public.completions set done_at = $1::date + time '10:00' where item_id = $2`, ["2031-03-06", c]);
+    await actAs("dewald");
+    p = await progress("2031-03-06");
+    expect(p[daily]).toMatchObject({ progress: 1, target: 2 });
+    expect(p[weekly]).toMatchObject({ progress: 3, target: 3 });
+
+    // A savings goal with stars already saved: given once, then it's finished.
+    const once = await plan(
+      `insert into public.reward_plans (household_id, member_id, title, period, goal, stars_needed, start_stars) values ($1, $2, 'Lego', 'once', 'stars', 4, 5) returning id`,
+      [householdId, kid],
+    );
+    await actAs("partner");
+    await db.query(`select public.give_reward($1)`, [once]);
+    await expect(db.query(`select public.give_reward($1)`, [once])).rejects.toThrow();
+    expect(await one(`select active from public.reward_plans where id = $1`, [once])).toEqual({ active: false });
+    expect(await one(`select stars_used from public.reward_periods where plan_id = $1`, [once])).toEqual({ stars_used: 4 });
   });
 });

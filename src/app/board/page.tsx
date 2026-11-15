@@ -28,6 +28,8 @@ import { MODE_LABELS } from "@/lib/plan";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { DayInfo } from "@/lib/types";
 import { usePlanData } from "@/lib/use-plan-data";
+import { progressShort, rewardStatus } from "@/lib/rewards";
+import { useRewards } from "@/lib/use-rewards";
 import { useStars } from "@/lib/use-stars";
 
 /** Friendly messages for the board RPCs' errors. */
@@ -59,6 +61,7 @@ export default function BoardTodayPage() {
   const [todos, setTodos] = useState<BoardTodo[]>([]);
   const kidIds = useMemo(() => members.filter((m) => m.role === "child").map((m) => m.id), [members]);
   const stars = useStars(kidIds, today);
+  const rewards = useRewards(kidIds, today);
 
   // 2a. Today's mode and to-dos: open ones, and those ticked today.
   const loadDay = useCallback(async () => {
@@ -206,13 +209,27 @@ export default function BoardTodayPage() {
         {columns.map((col) => {
           const person = memberById(col.memberId);
           const star = person && person.role === "child" ? stars.stats[person.id] : undefined;
+          // A child's headline reward plan: "3/5 ★ Screen time" (or the star total without one).
+          const plan = person && person.role === "child" ? rewards.headline(person.id) : undefined;
+          const planProgress = plan ? rewards.progress[plan.id] : undefined;
           return (
             <div key={col.memberId ?? "anyone"} className="board-col">
               <header className="board-col__head">
                 {person ? <Avatar member={person} /> : <span className="board-col__anyone" aria-hidden="true">?</span>}
                 <span className="board-col__name">{person ? person.display_name.split(" ")[0] : "Anyone"}</span>
-                {star && <span className="board-col__stars">★ {star.balance}</span>}
+                {plan ? (
+                  <span className="board-col__stars" title={plan.title}>
+                    {rewardStatus(planProgress) === "going" ? progressShort(plan, planProgress) : "🎉"}
+                  </span>
+                ) : (
+                  star && <span className="board-col__stars">★ {star.earned}</span>
+                )}
               </header>
+              {plan && (
+                <span className="board-col__goal">
+                  {rewardStatus(planProgress) === "earned" ? `Earned: ${plan.title}` : rewardStatus(planProgress) === "given" ? `${plan.title} ✓` : plan.title}
+                </span>
+              )}
               <div className="board-col__progress" aria-label={`${col.doneCount} of ${col.items.length} done`}>
                 <span style={{ width: `${(col.doneCount / col.items.length) * 100}%` }} />
               </div>

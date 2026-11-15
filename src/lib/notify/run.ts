@@ -16,6 +16,7 @@ import { expandForRange } from "../calendar/expand";
 import { addDays, dateKey, wallTimeOf } from "../calendar/time";
 import type { CalendarEventRow } from "../calendar/types";
 import { idReminder } from "../member-ids";
+import { rewardEarnedNotice, type RewardProgress } from "../rewards";
 import { isReviewDay, reviewWeeks, weeklyReviewNotice, type WeekCounts } from "../review";
 import { checkinReminder } from "../trips";
 import { getSupabaseAdminClient } from "../supabase/admin";
@@ -294,6 +295,36 @@ export async function runNotifications(now = new Date()) {
         );
       }
 
+      // Rewards: a child has earned one. Goes to parents (owner, or adults
+      // marked as a parent). Errors are swallowed so a missing table or
+      // column never stops the other notices.
+      const rewardNotices: Notice[] = [];
+      const parentIds = new Set<string>();
+      if (people.some((m) => m.role !== "child")) {
+        try {
+          const [{ data: plans, error: planErr }, { data: flags }] = await Promise.all([
+            admin.from("reward_plans").select("id, title, member_id").eq("household_id", householdId).eq("active", true),
+            admin.from("members").select("id, role, is_parent, display_name").eq("household_id", householdId),
+          ]);
+          const flagRows = (flags ?? []) as Array<{ id: string; role: string; is_parent: boolean | null; display_name: string }>;
+          for (const f of flagRows) if (f.role === "owner" || (f.role === "adult" && f.is_parent)) parentIds.add(f.id);
+          const planRows = (plans ?? []) as Array<{ id: string; title: string; member_id: string }>;
+          if (!planErr && planRows.length && people.some((m) => parentIds.has(m.id))) {
+            const names = new Map(flagRows.map((f) => [f.id, f.display_name.split(" ")[0]]));
+            for (const childId of new Set(planRows.map((p) => p.member_id))) {
+              const { data: prog } = await admin.rpc("reward_progress_core", { p_member_id: childId, p_today: today });
+              const byPlan = new Map(((prog ?? []) as RewardProgress[]).map((r) => [r.plan_id, r]));
+              for (const plan of planRows.filter((p) => p.member_id === childId)) {
+                const n = rewardEarnedNotice(plan, byPlan.get(plan.id), names.get(childId) ?? "Someone");
+                if (n) rewardNotices.push(n);
+              }
+            }
+          }
+        } catch (err) {
+          console.error("[notify] rewards failed", householdId, err);
+        }
+      }
+
       // 3d. Per person: work out, claim, send.
       for (const member of people) {
         const prefs = prefsOf(member);
@@ -320,6 +351,7 @@ export async function runNotifications(now = new Date()) {
             if ((isCheckin && prefs.trip_checkin) || (!isCheckin && prefs.id_expiry)) notices.push(n);
           }
         }
+        if (parentIds.has(member.id)) notices.push(...rewardNotices);
         if (prefs.routine_nudge && isTimeFor(nowMinutes, prefs.routine_nudge_time)) {
           notices.push(...routineNudges(member, routines, steps, completions, today, mode));
         }

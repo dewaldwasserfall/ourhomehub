@@ -45,6 +45,7 @@ import { euros } from "@/lib/budget";
 import { binColour, binList, binsAround } from "@/lib/bins";
 import { useBudget } from "@/lib/use-budget";
 import { useStars } from "@/lib/use-stars";
+import { useRewards } from "@/lib/use-rewards";
 import { enqueue, isNetworkError, readCache, SYNCED_EVENT, writeCache } from "@/lib/offline";
 import { StarCard } from "@/components/star-card";
 import { WaitingCard } from "@/components/waiting-card";
@@ -159,6 +160,8 @@ export default function TodayPage() {
   // Children see their own stars on Today.
   const isChild = me.role === "child";
   const stars = useStars(isChild ? [me.id] : [], today);
+  const rewards = useRewards(isChild ? [me.id] : [], today);
+  const myPlan = isChild ? rewards.headline(me.id) : undefined;
 
   // Step 2c: today's mode, to-dos and the groceries line.
   const loadDay = useCallback(async () => {
@@ -608,7 +611,7 @@ export default function TodayPage() {
       {isChild && (
         <section className="section">
           <Link href="/stars" className="group" style={{ display: "block" }}>
-            <StarCard stats={stars.stats[me.id]} next={stars.nextReward(me.id)} />
+            <StarCard stats={stars.stats[me.id]} plan={myPlan} progress={myPlan ? rewards.progress[myPlan.id] : undefined} />
           </Link>
         </section>
       )}

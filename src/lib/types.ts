@@ -52,6 +52,8 @@ export interface Member {
   can_see_finances: boolean;
   /** Sees Trips (set by the owner; children read-only). */
   can_see_trips: boolean;
+  /** Sets up reward plans and gives rewards (owner-controlled; adults only). */
+  is_parent?: boolean;
   /** Sees and controls SmartThings devices (owner-controlled; adults only). */
   can_manage_home?: boolean;
   created_at: string;

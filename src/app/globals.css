@@ -3041,3 +3041,42 @@ textarea.input {
   color: var(--accent);
   font-size: 15px;
 }
+.board-col__goal {
+  margin-top: -6px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+/* Stars: reward plans with their linked tasks */
+.reward-plan {
+  margin-top: 12px;
+}
+.reward-plan__period {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 600;
+  vertical-align: 2px;
+}
+.reward-plan__task {
+  gap: 10px;
+  min-height: 40px;
+  font-size: 15px;
+}
+.reward-plan__check {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--separator);
+  display: grid;
+  place-items: center;
+  color: #fff;
+}
+.reward-plan__check--done {
+  border-color: #ffb800;
+  background: #ffb800;
+}

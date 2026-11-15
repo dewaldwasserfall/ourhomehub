@@ -52,3 +52,8 @@ export function canManageHome(member: Pick<Member, "role" | "can_manage_home">):
 export function canSeeVault(member: Pick<Member, "role" | "can_see_trips">): boolean {
   return canEditTrips(member);
 }
+
+/** Sets up reward plans and gives rewards: the owner, and adults marked as a parent. */
+export function isParent(member: Pick<Member, "role" | "is_parent">): boolean {
+  return member.role === "owner" || (member.role === "adult" && Boolean(member.is_parent));
+}
