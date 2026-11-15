@@ -3035,3 +3035,9 @@ textarea.input {
   background: var(--surface);
   color: var(--ink);
 }
+
+/* Today: "Show 3 done" under a routine or the zone */
+.show-done .row__body {
+  color: var(--accent);
+  font-size: 15px;
+}

@@ -434,6 +434,34 @@ export default function TodayPage() {
   // away to one line. Not saved: it starts on All each time.
   const [zoneView, setZoneView] = useState<"all" | "next" | "hidden">("all");
 
+  // Finished items stay out of sight: a routine step or zone task leaves the
+  // list once its tick animation has played. "Show 3 done" at the bottom of a
+  // section brings them back (to untick a mistake) until Today is reopened.
+  const [showDone, setShowDone] = useState<Set<string>>(new Set());
+  const visibleItems = (sectionKey: string, items: TickItem[]) =>
+    showDone.has(sectionKey) ? items : items.filter((i) => !i.done || settling.has(i.key));
+  const doneToggle = (sectionKey: string, items: TickItem[]) => {
+    const hidden = items.filter((i) => i.done && !settling.has(i.key)).length;
+    if (hidden === 0) return null;
+    const shown = showDone.has(sectionKey);
+    return (
+      <button
+        type="button"
+        className="row row--pressable show-done"
+        onClick={() =>
+          setShowDone((cur) => {
+            const next = new Set(cur);
+            if (shown) next.delete(sectionKey);
+            else next.add(sectionKey);
+            return next;
+          })
+        }
+      >
+        <span className="row__body">{shown ? "Hide done" : `Show ${hidden} done`}</span>
+      </button>
+    );
+  };
+
   // Folded routines: by default the unfinished ones for this time of day are
   // open; once someone taps a header, their choice is kept.
   const [openRoutines, setOpenRoutines] = useState<Set<string> | null>(null);
@@ -658,7 +686,8 @@ export default function TodayPage() {
             </div>
             {open ? (
               <div className="group">
-                <AnimatePresence initial={false}>{items.map(tickRow)}</AnimatePresence>
+                <AnimatePresence initial={false}>{visibleItems(`routine:${routine.id}`, items).map(tickRow)}</AnimatePresence>
+                {doneToggle(`routine:${routine.id}`, items)}
               </div>
             ) : (
               <button
@@ -746,12 +775,13 @@ export default function TodayPage() {
               <div className="group">
                 <AnimatePresence initial={false}>
                   {zoneView === "all"
-                    ? // Step 5c: All: open tasks first, then the finished ones (untick a mistake there).
-                      [...zone.all.filter((i) => !i.done), ...zone.all.filter((i) => i.done)].map(tickRow)
+                    ? // Step 5c: All: the open tasks (finished ones behind "Show done").
+                      [...visibleItems("zone", zone.all.filter((i) => !i.done)), ...visibleItems("zone", zone.all.filter((i) => i.done))].map(tickRow)
                     : // Step 5d: Next 3: three open tasks, plus anything ticked a moment ago.
                       [...zone.all.filter((i) => !i.done).slice(0, 3), ...zone.all.filter((i) => i.done && settling.has(i.key))].map(tickRow)}
                 </AnimatePresence>
-                {zoneView === "next" && zone.all.every((i) => i.done) && (
+                {zoneView === "all" && doneToggle("zone", zone.all)}
+                {zone.all.every((i) => i.done) && !showDone.has("zone") && (zoneView === "next" || zone.all.every((i) => !settling.has(i.key))) && (
                   <div className="row" style={{ color: "var(--ink-2)" }}>
                     <span className="row__body">All done for this fortnight</span>
                   </div>
