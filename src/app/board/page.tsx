@@ -13,6 +13,10 @@
  * Admin mode (a parent unlocked the board with their PIN): "+ Grocery" and
  * "+ To-do" appear on the left, and tapping a waiting tick opens Confirm /
  * Not done. See board-admin.tsx and board-add.tsx.
+ *
+ * Tiles: the left column's calendar, bins and groceries tiles open full
+ * screen when tapped, with a large "← Home" to come back (and back by
+ * themselves after 2 minutes idle). See board-expanded.tsx.
  */
 "use client";
 
@@ -20,12 +24,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "@/components/avatar";
 import { useHousehold } from "@/components/household-context";
 import { BoardAddSheet, type AddKind } from "@/components/board/board-add";
+import { BoardExpanded } from "@/components/board/board-expanded";
 import { useBoardAdmin } from "@/components/board/board-admin";
 import { CelebrationLayer } from "@/components/celebration";
 import { DishwasherCard } from "@/components/dishwasher-card";
 import { Sheet } from "@/components/sheet";
 import { useToast } from "@/components/toast";
-import { binColour, binList, binsAround } from "@/lib/bins";
+import { binColour, binLabel, binList, binsAround } from "@/lib/bins";
+import { groceryLabel, groceryPreview, grocerySections, upcomingBins, type GroceryEntry, type GroceryList } from "@/lib/board-tiles";
 import { oneMoreStar } from "@/lib/celebrate";
 import { unlockChime } from "@/lib/chime";
 import { boardColumns, boardTapAction, type BoardItem, type BoardTodo } from "@/lib/board";
@@ -69,6 +75,7 @@ export default function BoardTodayPage() {
   const calendar = useCalendar(household.id);
   const [dayInfo, setDayInfo] = useState<DayInfo | null>(null);
   const [todos, setTodos] = useState<BoardTodo[]>([]);
+  const [groceries, setGroceries] = useState<{ lists: GroceryList[]; entries: GroceryEntry[] }>({ lists: [], entries: [] });
   const kidIds = useMemo(() => members.filter((m) => m.role === "child").map((m) => m.id), [members]);
   const stars = useStars(kidIds, today);
   const rewards = useRewards(kidIds, today);
@@ -112,16 +119,25 @@ export default function BoardTodayPage() {
   const loadDay = useCallback(async () => {
     // Midnight on the tablet's clock (the tablet hangs in the household's time zone).
     const dayStart = new Date(`${today}T00:00:00`).toISOString();
-    const [infoRes, todoRes] = await Promise.all([
+    const [infoRes, todoRes, listRes, groceryRes] = await Promise.all([
       supabase.rpc("day_info", { p_date: today }),
       supabase
         .from("list_entries")
         .select("id, text, status, due_date, assigned_to, completed_at, pending, via_board, done_for, confirmed_by, list:lists!inner(type)")
         .eq("list.type", "todo")
         .or(`status.eq.open,and(status.eq.done,completed_at.gte.${dayStart})`),
+      // The shopping lists and what's still to buy (the Groceries tile).
+      supabase.from("lists").select("id, name, is_default, sort_order").eq("type", "shopping"),
+      supabase
+        .from("list_entries")
+        .select("id, list_id, text, quantity, category, list:lists!inner(type)")
+        .eq("list.type", "shopping")
+        .eq("status", "open"),
     ]);
     if (!infoRes.error) setDayInfo(((infoRes.data ?? []) as DayInfo[])[0] ?? null);
     if (!todoRes.error) setTodos((todoRes.data ?? []) as unknown as BoardTodo[]);
+    if (!listRes.error && !groceryRes.error)
+      setGroceries({ lists: (listRes.data ?? []) as GroceryList[], entries: (groceryRes.data ?? []) as unknown as GroceryEntry[] });
   }, [supabase, today]);
 
   useEffect(() => {
@@ -158,6 +174,34 @@ export default function BoardTodayPage() {
     return { upcoming, tomorrow: upcoming.length === 0 ? (byDay.get(tomorrow) ?? []).slice(0, 3) : [] };
   }, [calendar.rows, today, tz, now]);
   const bins = binsAround(plan.binDays, today);
+
+  // 4b. The tiles' full-screen views: the week ahead, the next bins, all groceries.
+  const [expanded, setExpanded] = useState<"calendar" | "bins" | "groceries" | null>(null);
+  const shopping = useMemo(() => grocerySections(groceries.lists, groceries.entries), [groceries]);
+  const week = useMemo(() => {
+    if (expanded !== "calendar") return [];
+    const end = addDays(today, 6);
+    const byDay = groupByDay(expandForRange(calendar.rows, today, end, tz), today, end);
+    return Array.from({ length: 7 }, (_, i) => addDays(today, i)).map((day) => ({ day, items: byDay.get(day) ?? [] }));
+  }, [expanded, calendar.rows, today, tz]);
+  const dayName = (iso: string) =>
+    iso === today
+      ? "Today"
+      : iso === addDays(today, 1)
+        ? "Tomorrow"
+        : new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${iso}T12:00:00Z`));
+  /** Props that make a tile tappable (and keyboard-friendly). */
+  const tile = (which: "calendar" | "bins" | "groceries") => ({
+    role: "button" as const,
+    tabIndex: 0,
+    onClick: () => setExpanded(which),
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        setExpanded(which);
+      }
+    },
+  });
 
   // Step 5: taps.
   const [asking, setAsking] = useState<BoardItem | null>(null);
@@ -247,7 +291,7 @@ export default function BoardTodayPage() {
         <DishwasherCard variant="board" />
 
         {(bins.today.length > 0 || bins.tomorrow.length > 0) && (
-          <div className="board-card board-bins">
+          <div className="board-card board-bins board-tile" {...tile("bins")} aria-label="Bins: show the next collections">
             {bins.today.length > 0 && (
               <p className="board-bins__line">
                 {bins.today.map((k) => <span key={k} className="bin-dot" style={{ background: binColour(k) }} aria-hidden="true" />)}
@@ -271,7 +315,7 @@ export default function BoardTodayPage() {
           </div>
         )}
 
-        <div className="board-card">
+        <div className="board-card board-tile" {...tile("calendar")} aria-label="Calendar: show the week">
           <h2 className="board-card__title">{events.upcoming.length > 0 ? "Today" : "Tomorrow"}</h2>
           {events.upcoming.length === 0 && events.tomorrow.length === 0 && <p className="board-muted">Nothing on the calendar</p>}
           {[...events.upcoming, ...events.tomorrow].map((occ) => (
@@ -281,6 +325,26 @@ export default function BoardTodayPage() {
             </div>
           ))}
         </div>
+
+        {/* Groceries: the default shopping list (tap for every list) */}
+        {shopping.length > 0 && (
+          <div className="board-card board-tile board-groceries" {...tile("groceries")} aria-label="Groceries: show the whole list">
+            <h2 className="board-card__title">
+              {shopping[0].list.name}
+              <span className="board-groceries__count">{shopping[0].count}</span>
+            </h2>
+            {shopping[0].count === 0 ? (
+              <p className="board-muted">Nothing to buy</p>
+            ) : (
+              <ul className="board-groceries__preview">
+                {groceryPreview(shopping[0]).items.map((e) => (
+                  <li key={e.id}>{groceryLabel(e)}</li>
+                ))}
+                {groceryPreview(shopping[0]).more > 0 && <li className="board-muted">+ {groceryPreview(shopping[0]).more} more</li>}
+              </ul>
+            )}
+          </div>
+        )}
       </aside>
 
       {/* Right: a column per person */}
@@ -428,6 +492,87 @@ export default function BoardTodayPage() {
           </div>
         )}
       </Sheet>
+
+      {/* Tiles, full screen */}
+      {expanded === "groceries" && (
+        <BoardExpanded
+          title="Groceries"
+          subtitle={shopping.map((x) => `${x.list.name}: ${x.count}`).join(" · ")}
+          onBack={() => setExpanded(null)}
+          actions={
+            admin && (
+              <button type="button" className="board-admin-add__button board-full__action" onClick={() => setAdding("grocery")}>
+                <span aria-hidden="true">＋</span> Grocery
+              </button>
+            )
+          }
+        >
+          <div className="board-full__lists">
+            {shopping.map((section) => (
+              <section key={section.list.id} className="board-full__list">
+                {shopping.length > 1 && <h2 className="board-full__list-name">{section.list.name}</h2>}
+                {section.count === 0 && <p className="board-muted">Nothing to buy</p>}
+                {section.categories.map((c) => (
+                  <div key={c.name} className="board-full__group">
+                    <h3 className="board-full__group-name">{c.name}</h3>
+                    <ul className="board-full__items">
+                      {c.items.map((e) => (
+                        <li key={e.id}>{groceryLabel(e)}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </section>
+            ))}
+          </div>
+        </BoardExpanded>
+      )}
+      {expanded === "calendar" && (
+        <BoardExpanded title="This week" onBack={() => setExpanded(null)}>
+          <div className="board-full__week">
+            {week.map(({ day, items }) => (
+              <section key={day} className={`board-full__day ${day === today ? "board-full__day--today" : ""}`}>
+                <h2 className="board-full__group-name">{dayName(day)}</h2>
+                {items.length === 0 && <p className="board-muted">Nothing planned</p>}
+                {items.map((occ) => (
+                  <div key={occ.key} className="board-event">
+                    <span className="board-event__time">{occ.allDay ? "All day" : timeKey(occ.start!, tz)}</span>
+                    <span className="board-event__title">{occ.title || "(No title)"}</span>
+                  </div>
+                ))}
+                {plan.binDays
+                  .filter((b) => b.date === day)
+                  .map((b) => (
+                    <div key={`${b.date}-${b.kind}`} className="board-event">
+                      <span className="board-event__time">
+                        <span className="bin-dot" style={{ background: binColour(b.kind) }} aria-hidden="true" />
+                      </span>
+                      <span className="board-event__title">{binLabel(b.kind)} bin</span>
+                    </div>
+                  ))}
+              </section>
+            ))}
+          </div>
+        </BoardExpanded>
+      )}
+      {expanded === "bins" && (
+        <BoardExpanded title="Bins" subtitle="Put them out the evening before" onBack={() => setExpanded(null)}>
+          <ul className="board-full__bins">
+            {upcomingBins(plan.binDays, today, 10).map(({ date, kinds }) => (
+              <li key={date}>
+                <span className="board-full__bin-dots">
+                  {kinds.map((k) => (
+                    <span key={k} className="bin-dot bin-dot--big" style={{ background: binColour(k) }} aria-hidden="true" />
+                  ))}
+                </span>
+                <span className="board-full__bin-what">{binList(kinds)}</span>
+                <span className="board-full__bin-when">{dayName(date)}</span>
+              </li>
+            ))}
+            {upcomingBins(plan.binDays, today).length === 0 && <li className="board-muted">No collections in the calendar yet.</li>}
+          </ul>
+        </BoardExpanded>
+      )}
 
       {/* A child earned a reward: the big moment (once per period on this board) */}
       <CelebrationLayer plans={rewards.plans} progress={rewards.progress} sound={chime} />
