@@ -108,16 +108,61 @@ async function pickVoice(): Promise<SpeechSynthesisVoice | null> {
 interface FullyLike {
   textToSpeech?: (text: string, localeOrVoice?: string) => void;
   stopTextToSpeech?: () => void;
+  initTts?: () => void;
+  bind?: (event: string, code: string) => void;
 }
 const fully = (): FullyLike | null => (typeof window === "undefined" ? null : ((window as unknown as { fully?: FullyLike }).fully ?? null));
 
-async function speak(text: string) {
+/** Which way replies are read aloud on this device (shown in the sheet when it's "none"). */
+export type SpeechRoute = "fully" | "browser" | "none";
+export function speechRoute(): SpeechRoute {
+  if (typeof window === "undefined") return "none";
+  if (fully()?.textToSpeech) return "fully";
+  return window.speechSynthesis ? "browser" : "none";
+}
+
+// Fully reports how speaking went through events; it runs the code we give
+// bind() as a string, so the events call this global.
+let fullyStarted = 0;
+let fullyReady = false;
+function readyFully(kiosk: FullyLike) {
+  if (fullyReady) return;
+  fullyReady = true;
+  (window as unknown as { __hhTts?: (e: string) => void }).__hhTts = (e) => {
+    if (e === "start") fullyStarted = Date.now();
+  };
+  try {
+    kiosk.bind?.("ttsUtteranceStart", "window.__hhTts && window.__hhTts('start')");
+    kiosk.initTts?.(); // newer Fully versions: start the speech engine early
+  } catch {
+    // Older Fully: speaking still works without these.
+  }
+}
+
+/**
+ * Read a reply aloud. onProblem gets a sentence to show when it can't.
+ */
+async function speak(text: string, onProblem: (message: string) => void = () => {}) {
   try {
     // Step 0: inside Fully Kiosk: use its speech (the device's own voice).
+    //         British English first; if nothing starts within 2.5 s (that
+    //         voice isn't installed), the device's default voice.
     const kiosk = fully();
     if (kiosk?.textToSpeech) {
+      readyFully(kiosk);
+      const asked = Date.now();
       kiosk.stopTextToSpeech?.();
       kiosk.textToSpeech(text, "en_GB");
+      if (!kiosk.bind) return; // can't tell whether it started: trust it
+      await new Promise((r) => setTimeout(r, 2500));
+      if (fullyStarted >= asked) return;
+      kiosk.textToSpeech(text);
+      await new Promise((r) => setTimeout(r, 2500));
+      if (fullyStarted < asked) onProblem("The tablet didn't read it out. Check its text-to-speech voice in Android Settings.");
+      return;
+    }
+    if (!window.speechSynthesis) {
+      onProblem("This app can't read replies aloud. In Fully Kiosk, turn on Advanced Web Settings → Enable JavaScript Interface, then reload.");
       return;
     }
     const synth = window.speechSynthesis;
@@ -172,7 +217,7 @@ export function VoiceAssistant({ variant }: { variant: "board" | "fab" }) {
       const answer = res.ok ? (json.reply ?? "Done.") : (json.message ?? "Something went wrong. Try again.");
       setReply(answer);
       setPhase("answered");
-      void speak(answer);
+      void speak(answer, setNote);
     } catch {
       setReply("No connection. Check the internet and try again.");
       setPhase("answered");
@@ -268,7 +313,7 @@ export function VoiceAssistant({ variant }: { variant: "board" | "fab" }) {
           {reply && (
             <div className="voice__reply">
               <p>{reply}</p>
-              <button type="button" className="voice__replay" onClick={() => void speak(reply)} aria-label="Read it out again">
+              <button type="button" className="voice__replay" onClick={() => void speak(reply, setNote)} aria-label="Read it out again">
                 🔊
               </button>
             </div>
