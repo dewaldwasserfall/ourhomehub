@@ -166,6 +166,7 @@ beforeAll(async () => {
     "20261114000800_dishwasher.sql",
     "20261115000100_reward_plans.sql",
     "20261115000200_board_admin.sql",
+    "20261115000300_board_celebrate_sound.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {

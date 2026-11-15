@@ -16,15 +16,18 @@
  */
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "@/components/avatar";
 import { useHousehold } from "@/components/household-context";
 import { BoardAddSheet, type AddKind } from "@/components/board/board-add";
 import { useBoardAdmin } from "@/components/board/board-admin";
+import { CelebrationLayer } from "@/components/celebration";
 import { DishwasherCard } from "@/components/dishwasher-card";
 import { Sheet } from "@/components/sheet";
 import { useToast } from "@/components/toast";
 import { binColour, binList, binsAround } from "@/lib/bins";
+import { oneMoreStar } from "@/lib/celebrate";
+import { unlockChime } from "@/lib/chime";
 import { boardColumns, boardTapAction, type BoardItem, type BoardTodo } from "@/lib/board";
 import { expandForRange, groupByDay } from "@/lib/calendar/expand";
 import { addDays, dateKey, timeKey, wallTimeOf } from "@/lib/calendar/time";
@@ -47,7 +50,7 @@ function boardError(message: string): string {
 
 export default function BoardTodayPage() {
   const supabase = getSupabaseBrowserClient();
-  const { household, members, memberById } = useHousehold();
+  const { household, members, memberById, me } = useHousehold();
   const tz = household.timezone;
   const toast = useToast();
   const { admin, adminError } = useBoardAdmin();
@@ -69,6 +72,41 @@ export default function BoardTodayPage() {
   const kidIds = useMemo(() => members.filter((m) => m.role === "child").map((m) => m.id), [members]);
   const stars = useStars(kidIds, today);
   const rewards = useRewards(kidIds, today);
+
+  // 1c. Celebrations: the chime is a per-board switch (me.id is the board's
+  //     id here). Sound is only allowed after a tap, so unlock it on the first.
+  const [chime, setChime] = useState(false);
+  useEffect(() => {
+    void supabase
+      .from("boards")
+      .select("celebrate_sound")
+      .eq("id", me.id)
+      .maybeSingle<{ celebrate_sound: boolean }>()
+      .then(({ data }) => setChime(Boolean(data?.celebrate_sound)));
+    window.addEventListener("pointerdown", unlockChime, { passive: true });
+    return () => window.removeEventListener("pointerdown", unlockChime);
+  }, [supabase, me.id]);
+
+  // 1d. "+1 ★": when a child's headline progress goes up (a tick confirmed),
+  //     pop a star on their column for a moment. Not on the first load.
+  const lastProgress = useRef<Record<string, number>>({});
+  const [pops, setPops] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const popped: Record<string, number> = {};
+    for (const plan of rewards.plans) {
+      const now = rewards.progress[plan.id]?.progress;
+      if (now === undefined) continue;
+      const before = lastProgress.current[plan.id];
+      if (before !== undefined && now > before && rewards.headline(plan.member_id)?.id === plan.id) popped[plan.member_id] = Date.now();
+      lastProgress.current[plan.id] = now;
+    }
+    if (Object.keys(popped).length) setPops((p) => ({ ...p, ...popped }));
+  }, [rewards.plans, rewards.progress]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (Object.keys(pops).length === 0) return;
+    const timer = setTimeout(() => setPops({}), 1400);
+    return () => clearTimeout(timer);
+  }, [pops]);
 
   // 2a. Today's mode and to-dos: open ones, and those ticked today.
   const loadDay = useCallback(async () => {
@@ -259,8 +297,9 @@ export default function BoardTodayPage() {
           // A child's headline reward plan: "3/5 ★ Screen time" (or the star total without one).
           const plan = person && person.role === "child" ? rewards.headline(person.id) : undefined;
           const planProgress = plan ? rewards.progress[plan.id] : undefined;
+          const almost = !!plan && rewardStatus(planProgress) === "going" && oneMoreStar(plan, planProgress);
           return (
-            <div key={col.memberId ?? "anyone"} className="board-col">
+            <div key={col.memberId ?? "anyone"} className={`board-col ${almost ? "board-col--almost" : ""}`}>
               <header className="board-col__head">
                 {person ? <Avatar member={person} /> : <span className="board-col__anyone" aria-hidden="true">?</span>}
                 <span className="board-col__name">{person ? person.display_name.split(" ")[0] : "Anyone"}</span>
@@ -271,10 +310,21 @@ export default function BoardTodayPage() {
                 ) : (
                   star && <span className="board-col__stars">★ {star.earned}</span>
                 )}
+                {person && pops[person.id] && (
+                  <span key={pops[person.id]} className="board-col__pop" aria-hidden="true">
+                    +1 ★
+                  </span>
+                )}
               </header>
               {plan && (
                 <span className="board-col__goal">
-                  {rewardStatus(planProgress) === "earned" ? `Earned: ${plan.title}` : rewardStatus(planProgress) === "given" ? `${plan.title} ✓` : plan.title}
+                  {rewardStatus(planProgress) === "earned"
+                    ? `Earned: ${plan.title}`
+                    : rewardStatus(planProgress) === "given"
+                      ? `${plan.title} ✓`
+                      : almost
+                        ? `1 more ★! ${plan.title}`
+                        : plan.title}
                 </span>
               )}
               <div className="board-col__progress" aria-label={`${col.doneCount} of ${col.items.length} done`}>
@@ -357,6 +407,9 @@ export default function BoardTodayPage() {
           </div>
         )}
       </Sheet>
+
+      {/* A child earned a reward: the big moment (once per period on this board) */}
+      <CelebrationLayer plans={rewards.plans} progress={rewards.progress} sound={chime} />
 
       <BoardAddSheet kind={adding} today={today} onClose={() => setAdding(null)} onAdded={(m) => toast.show(m)} />
       {toast.node}

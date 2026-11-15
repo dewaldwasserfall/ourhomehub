@@ -18,6 +18,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { BoardAdminProvider, BoardLockButton } from "@/components/board/board-admin";
 import { useHousehold } from "@/components/household-context";
+import { VoiceAssistant } from "@/components/voice-assistant";
 import { dateKey, timeKey } from "@/lib/calendar/time";
 
 const IDLE_MS = 2 * 60_000;
@@ -107,7 +108,10 @@ export function BoardShell({ boardName, children }: { boardName: string; childre
             {tab("/board", "Today")}
             {tab("/board/calendar", "Calendar")}
           </nav>
-          <BoardLockButton />
+          <div className="board-top__actions">
+            <VoiceAssistant variant="board" />
+            <BoardLockButton />
+          </div>
         </header>
 
         {lowBattery && (

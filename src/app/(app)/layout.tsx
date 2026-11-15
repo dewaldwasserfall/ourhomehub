@@ -11,6 +11,7 @@ import { OfflineBanner } from "@/components/offline-banner";
 import { ServiceWorker } from "@/components/service-worker";
 import { Sidebar } from "@/components/sidebar";
 import { TabBar } from "@/components/tab-bar";
+import { VoiceFab } from "@/components/voice-assistant";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { HOUSEHOLD_COLUMNS, type Household, type Member } from "@/lib/types";
 
@@ -47,6 +48,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <Sidebar />
       <div className="app-main">{children}</div>
       <TabBar />
+      <VoiceFab />
       <ServiceWorker />
       <OfflineBanner />
     </HouseholdProvider>

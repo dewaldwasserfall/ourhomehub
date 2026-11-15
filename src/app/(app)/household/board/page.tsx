@@ -30,6 +30,7 @@ interface Board {
   created_at: string;
   last_seen_at: string | null;
   unlock_minutes: number;
+  celebrate_sound: boolean;
 }
 
 /** Choices for how long a board stays unlocked after the last tap. */
@@ -48,7 +49,7 @@ export default function BoardSettingsPage() {
 
   // Step 1: the paired boards.
   const load = useCallback(async () => {
-    const { data } = await supabase.from("boards").select("id, name, created_at, last_seen_at, unlock_minutes").order("created_at");
+    const { data } = await supabase.from("boards").select("id, name, created_at, last_seen_at, unlock_minutes, celebrate_sound").order("created_at");
     setBoards((data ?? []) as Board[]);
   }, [supabase]);
   useEffect(() => {
@@ -91,6 +92,16 @@ export default function BoardSettingsPage() {
   async function setLockMinutes(id: string, minutes: number) {
     setBoards((list) => list.map((b) => (b.id === id ? { ...b, unlock_minutes: minutes } : b)));
     const { error } = await supabase.from("boards").update({ unlock_minutes: minutes }).eq("id", id);
+    if (error) {
+      toast.show(friendlyError(error));
+      await load();
+    }
+  }
+
+  // Step 4b: chime with celebrations, per board.
+  async function setChime(id: string, on: boolean) {
+    setBoards((list) => list.map((b) => (b.id === id ? { ...b, celebrate_sound: on } : b)));
+    const { error } = await supabase.from("boards").update({ celebrate_sound: on }).eq("id", id);
     if (error) {
       toast.show(friendlyError(error));
       await load();
@@ -178,6 +189,17 @@ export default function BoardSettingsPage() {
                     ))}
                   </select>
                 </label>
+                <span className="board-lock-setting">
+                  <span>Chime when a reward is earned</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    className="switch"
+                    aria-label={`${b.name}: chime when a reward is earned`}
+                    aria-checked={b.celebrate_sound}
+                    onClick={() => setChime(b.id, !b.celebrate_sound)}
+                  />
+                </span>
               </span>
               <button type="button" className="chip-button" onClick={() => (confirmRemove === b.id ? remove(b.id) : setConfirmRemove(b.id))}>
                 {confirmRemove === b.id ? "Tap again to remove" : "Remove"}

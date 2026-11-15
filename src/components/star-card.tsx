@@ -5,6 +5,7 @@
  */
 "use client";
 
+import { oneMoreStar } from "@/lib/celebrate";
 import { progressText, rewardStatus, type RewardPlan, type RewardProgress } from "@/lib/rewards";
 import type { StarStats } from "@/lib/use-stars";
 import { FlameIcon, StarIcon } from "./icons";
@@ -44,7 +45,9 @@ export function StarCard({
               ? `Earned: ${plan.title}!`
               : status === "given"
                 ? `${plan.title}: given ✓`
-                : `${plan.title}: ${progressText(plan, progress)}`}
+                : oneMoreStar(plan, progress)
+                  ? `${plan.title}: 1 more ★!`
+                  : `${plan.title}: ${progressText(plan, progress)}`}
           </span>
         </div>
       )}

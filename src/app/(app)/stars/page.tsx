@@ -19,6 +19,7 @@ import { CheckIcon, PlusIcon } from "@/components/icons";
 import { Navbar } from "@/components/navbar";
 import { Segmented } from "@/components/segmented";
 import { Sheet } from "@/components/sheet";
+import { CelebrationLayer } from "@/components/celebration";
 import { StarCard } from "@/components/star-card";
 import { useToast } from "@/components/toast";
 import { addDays, dateKey } from "@/lib/calendar/time";
@@ -396,6 +397,8 @@ export default function StarsPage() {
           </div>
         )}
       </Sheet>
+      {/* The child's own phone celebrates an earned reward (once per period) */}
+      {me.role === "child" && <CelebrationLayer plans={rewards.plans} progress={rewards.progress} />}
       {toast.node}
     </main>
   );

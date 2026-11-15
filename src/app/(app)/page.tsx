@@ -47,6 +47,7 @@ import { useBudget } from "@/lib/use-budget";
 import { useStars } from "@/lib/use-stars";
 import { useRewards } from "@/lib/use-rewards";
 import { enqueue, isNetworkError, readCache, SYNCED_EVENT, writeCache } from "@/lib/offline";
+import { CelebrationLayer } from "@/components/celebration";
 import { StarCard } from "@/components/star-card";
 import { WaitingCard } from "@/components/waiting-card";
 import { canSeeFinances, canTick } from "@/lib/roles";
@@ -839,6 +840,8 @@ export default function TodayPage() {
       )}
       </div>
       </div>
+      {/* A child earned a reward: celebrate once per period on this phone */}
+      {isChild && <CelebrationLayer plans={rewards.plans} progress={rewards.progress} />}
       {toast.node}
     </main>
   );
