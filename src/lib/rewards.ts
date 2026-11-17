@@ -114,3 +114,26 @@ export function rewardEarnedNotice(
     url: "/stars",
   };
 }
+
+/** One given reward, with what earned it (reward_periods + the plan's title). */
+export interface RewardHistoryEntry {
+  id: string;
+  plan_id: string;
+  period_start: string;
+  given_at: string;
+  given_by: string | null;
+  stars_used: number;
+  ticks: Array<{ id: string; kind: string; title: string; done_at: string } | { saved: number }>;
+  plan: { title: string; member_id: string } | null;
+}
+
+/**
+ * The lines under a given reward in the history: "Feed the cat · Mon 16 Nov",
+ * and "3 stars saved from before" for stars that predate reward plans.
+ */
+export function historyLines(entry: Pick<RewardHistoryEntry, "ticks">, timeZone: string): string[] {
+  const day = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone });
+  return entry.ticks.map((t) =>
+    "saved" in t ? `${t.saved} ${t.saved === 1 ? "star" : "stars"} saved from before` : `${t.title} · ${day.format(new Date(t.done_at))}`,
+  );
+}

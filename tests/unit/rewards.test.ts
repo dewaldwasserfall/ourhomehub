@@ -1,6 +1,6 @@
 /** Reward plans: wording, status, linked-task ticks and the parent push. */
 import { describe, expect, it } from "vitest";
-import { linkedTaskDone, progressShort, progressText, rewardEarnedNotice, rewardStatus, type RewardProgress } from "@/lib/rewards";
+import { historyLines, linkedTaskDone, progressShort, progressText, rewardEarnedNotice, rewardStatus, type RewardProgress } from "@/lib/rewards";
 
 const prog = (over: Partial<RewardProgress> = {}): RewardProgress => ({
   plan_id: "p1",
@@ -57,5 +57,21 @@ describe("rewardEarnedNotice", () => {
     expect(rewardEarnedNotice(plan, prog({ progress: 5, given: true }), "Lennon")).toBeNull();
     const n = rewardEarnedNotice(plan, prog({ progress: 5 }), "Lennon");
     expect(n).toEqual({ key: "reward:p1:2026-11-16", title: "Lennon earned Screen time 🎉", body: "Open Stars to mark it as given.", url: "/stars" });
+  });
+});
+
+describe("historyLines", () => {
+  it("lists what earned a reward, with saved stars first", () => {
+    const lines = historyLines(
+      {
+        ticks: [
+          { saved: 2 },
+          { id: "c1", kind: "chore", title: "GFT zakkie", done_at: "2026-11-16T15:00:00Z" },
+          { id: "c2", kind: "chore", title: "Tafel dekken", done_at: "2026-11-16T16:30:00Z" },
+        ],
+      },
+      "Europe/Amsterdam",
+    );
+    expect(lines).toEqual(["2 stars saved from before", "GFT zakkie · Mon 16 Nov", "Tafel dekken · Mon 16 Nov"]);
   });
 });

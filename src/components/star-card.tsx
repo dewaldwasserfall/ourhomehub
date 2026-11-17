@@ -1,7 +1,12 @@
 /**
- * A child's stars at a glance: stars earned so far, their streak, and
- * progress on the reward plan they're working on (the first one not given
- * yet). On their Today, and per child on the Stars screen.
+ * A child's stars at a glance: the stars towards the reward they're working
+ * on (the first one not given yet; back to 0 once it's given), their streak,
+ * and that reward's progress bar. On their Today, and per child on the Stars
+ * screen.
+ *
+ * Only stars that count towards a reward are shown: a plan that counts only
+ * certain tasks shows only those. (No lifetime total: it counted every tick,
+ * which looked like stars that don't count.)
  */
 "use client";
 
@@ -19,17 +24,20 @@ export function StarCard({
   plan?: RewardPlan;
   progress?: RewardProgress;
 }) {
-  const earned = stats?.earned ?? 0;
+  // Stars towards the reward (star goals only; "all tasks" goals show tasks).
+  const towards = plan?.goal === "stars" ? Math.min(progress?.progress ?? 0, progress?.target ?? 0) : null;
   const status = rewardStatus(progress);
   const target = progress?.target ?? 0;
   const pct = target > 0 ? Math.min(100, ((progress?.progress ?? 0) / target) * 100) : 0;
   return (
     <div className="star-card">
       <div className="star-card__numbers">
-        <span className="star-card__stat">
-          <StarIcon size={22} strokeWidth={2} className="star-card__star" />
-          <strong>{earned}</strong> {earned === 1 ? "star" : "stars"}
-        </span>
+        {towards !== null && (
+          <span className="star-card__stat">
+            <StarIcon size={22} strokeWidth={2} className="star-card__star" />
+            <strong>{towards}</strong> of {progress?.target ?? plan?.stars_needed} {(progress?.target ?? 0) === 1 ? "star" : "stars"}
+          </span>
+        )}
         <span className="star-card__stat">
           <FlameIcon size={20} strokeWidth={2} className="star-card__flame" />
           <strong>{stats?.streak ?? 0}</strong>-day streak

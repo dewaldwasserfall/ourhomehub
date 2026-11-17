@@ -228,10 +228,11 @@ export default function BoardTodayPage() {
       <header className="board-col__head">
         {person ? <Avatar member={person} /> : <span className="board-col__anyone" aria-hidden="true">?</span>}
         <span className="board-col__name">{name}</span>
-        {star && (
-          <span className="board-col__stars" aria-label={`${star.earned} stars${star.streak > 1 ? `, ${star.streak}-day streak` : ""}`}>
-            ★ {star.earned}
-            {star.streak > 1 && <span className="board-col__streak"> 🔥{star.streak}</span>}
+        {/* The streak only: stars belong to each reward (below), so a
+            lifetime total here would count ticks that don't count. */}
+        {star && star.streak > 1 && (
+          <span className="board-col__stars" aria-label={`${star.streak}-day streak`}>
+            <span className="board-col__streak">🔥{star.streak}</span>
           </span>
         )}
         {person && pops[person.id] && (
@@ -573,7 +574,7 @@ export default function BoardTodayPage() {
           const person = memberById(col.memberId);
           const star = person?.role === "child" ? stars.stats[person.id] : undefined;
           const parts = [
-            star ? `★ ${star.earned}${star.streak > 1 ? ` · 🔥 ${star.streak}-day streak` : ""}` : null,
+            star && star.streak > 1 ? `🔥 ${star.streak}-day streak` : null,
             col.items.length ? `${col.doneCount} of ${col.items.length} done today` : null,
           ].filter(Boolean);
           return (

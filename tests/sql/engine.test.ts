@@ -167,6 +167,7 @@ beforeAll(async () => {
     "20261115000100_reward_plans.sql",
     "20261115000200_board_admin.sql",
     "20261115000300_board_celebrate_sound.sql",
+    "20261117000100_reward_history.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -1064,6 +1065,11 @@ describe("stars and rewards", () => {
     expect(after).toEqual({ spent: 2, balance: 0 });
 
     // Streak: the kid's own routine has one every-day step, done on 16 Nov only.
+    // (Streaks start at the member's join date: pin it before the dates used
+    // here, so the test doesn't depend on the day it runs.)
+    await actAsAdmin();
+    await db.query(`update public.members set created_at = '2026-11-01' where id = $1`, [kid]);
+    await actAs("dewald");
     const streak = await one<{ streak: number }>(`select streak from public.member_stars($1, '2026-11-16')`, [kid]);
     expect(streak.streak).toBe(1);
     // On the 17th (not done yet) today doesn't break it.
@@ -1664,6 +1670,48 @@ describe("reward plans", () => {
     await expect(db.query(`select public.give_reward($1)`, [once])).rejects.toThrow();
     expect(await one(`select active from public.reward_plans where id = $1`, [once])).toEqual({ active: false });
     expect(await one(`select stars_used from public.reward_periods where plan_id = $1`, [once])).toEqual({ stars_used: 4 });
+  });
+});
+
+describe("reward history", () => {
+  it("records which ticks paid for each reward, oldest first, without using a tick twice", async () => {
+    await actAs("dewald");
+    const kid = (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS.kid.id])).id;
+    const chore = async (title: string) =>
+      (await one<{ id: string }>(`insert into public.chores (household_id, title, every_n, unit, next_due, assigned_to) values ($1, $2, 1, 'day', current_date, $3) returning id`, [householdId, title, kid])).id;
+    const [x, y, z, w] = [await chore("Feed cat"), await chore("Set table"), await chore("Bins"), await chore("Not linked")];
+
+    // A carry-over plan: 2 stars, only x, y and z count.
+    const plan = (
+      await one<{ id: string }>(
+        `insert into public.reward_plans (household_id, member_id, title, period, goal, stars_needed, counts, carry_over, counts_from) values ($1, $2, 'Screen time', 'week', 'stars', 2, 'linked', true, current_date - 10) returning id`,
+        [householdId, kid],
+      )
+    ).id;
+    await db.query(`insert into public.reward_plan_tasks (plan_id, kind, task_id) values ($1, 'chore', $2), ($1, 'chore', $3), ($1, 'chore', $4)`, [plan, x, y, z]);
+
+    // Ticks a few days ago, in order: w (doesn't count), x, y, z.
+    const tick = async (item: string, daysAgo: number) => {
+      await actAs("dewald");
+      await db.query(`select public.set_completion('chore', $1, current_date - $2::int, true)`, [item, daysAgo]);
+      await actAsAdmin();
+      await db.query(`update public.completions set done_at = now() - make_interval(days => $2::int) where item_id = $1 and for_date = current_date - $2::int`, [item, daysAgo]);
+    };
+    await tick(w, 5);
+    await tick(x, 4);
+    await tick(y, 3);
+    await tick(z, 2);
+
+    // Step 1: the first reward is paid by the two oldest counting ticks.
+    await actAs("dewald");
+    await db.query(`select public.give_reward($1)`, [plan]);
+    type Tick = { title?: string; saved?: number };
+    const history = async () =>
+      (await all<{ ticks: Tick[] }>(`select ticks from public.reward_periods where plan_id = $1 order by given_at`, [plan])).map((r) => r.ticks.map((t) => t.title ?? `saved ${t.saved}`));
+    expect(await history()).toEqual([["Feed cat", "Set table"]]);
+    // One left over towards the next reward.
+    const left = await one<{ progress: number }>(`select progress from public.reward_progress($1, current_date) where plan_id = $2`, [kid, plan]);
+    expect(left.progress).toBe(1);
   });
 });
 

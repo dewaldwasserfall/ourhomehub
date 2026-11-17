@@ -12,7 +12,7 @@
  */
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Avatar } from "@/components/avatar";
 import { useHousehold } from "@/components/household-context";
 import { CheckIcon, PlusIcon } from "@/components/icons";
@@ -24,7 +24,7 @@ import { StarCard } from "@/components/star-card";
 import { useToast } from "@/components/toast";
 import { addDays, dateKey } from "@/lib/calendar/time";
 import { friendlyError } from "@/lib/errors";
-import { PERIOD_LABELS, linkedTaskDone, progressText, rewardStatus, type RewardPeriod, type RewardPlan, type RewardPlanTask } from "@/lib/rewards";
+import { PERIOD_LABELS, historyLines, linkedTaskDone, type RewardHistoryEntry, progressText, rewardStatus, type RewardPeriod, type RewardPlan, type RewardPlanTask } from "@/lib/rewards";
 import { isParent } from "@/lib/roles";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { usePlanData } from "@/lib/use-plan-data";
@@ -66,6 +66,23 @@ export default function StarsPage() {
   const rewards = useRewards(kidIds, today);
   // Titles of linked tasks, and ticks since a week before the week began.
   const plan = usePlanData(household.id, addDays(today, -14));
+
+  // Step 1b: rewards already given, with the ticks that earned each one
+  //          (newest first; reloads when a reward is given).
+  const [history, setHistory] = useState<RewardHistoryEntry[]>([]);
+  const [openEntry, setOpenEntry] = useState<string | null>(null);
+  const loadHistory = useCallback(async () => {
+    const { data } = await supabase
+      .from("reward_periods")
+      .select("id, plan_id, period_start, given_at, given_by, stars_used, ticks, plan:reward_plans(title, member_id)")
+      .order("given_at", { ascending: false })
+      .limit(60);
+    setHistory((data ?? []) as unknown as RewardHistoryEntry[]);
+  }, [supabase]);
+  useEffect(() => {
+    void loadHistory();
+  }, [loadHistory, rewards.progress]);
+  const givenDay = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: household.timezone });
 
   // Step 1: the tasks a child's plan can link to (theirs, or anyone's).
   const optionsFor = (memberId: string): TaskOption[] => {
@@ -165,7 +182,7 @@ export default function StarsPage() {
 
   return (
     <main className="screen">
-      <Navbar title="Stars" subtitle="One star for every routine step, chore, zone task or to-do ticked off" />
+      <Navbar title="Stars" subtitle="Each reward counts its own stars: every tick, or only the tasks it lists" />
 
       {kids.length === 0 && (
         <section className="section">
@@ -246,6 +263,56 @@ export default function StarsPage() {
             {kidPlans.length === 0 && parent && (
               <p className="section__footer">No rewards yet. Add one: daily, weekly, or a savings goal.</p>
             )}
+
+            {/* Step 5: rewards given, newest first; tap one for what earned it */}
+            {(() => {
+              const given = history.filter((h) => h.plan?.member_id === kid.id).slice(0, 15);
+              if (given.length === 0) return null;
+              return (
+                <>
+                  <div className="section__header reward-history__header">
+                    <span className="section__header-title">History</span>
+                  </div>
+                  <div className="group">
+                    {given.map((h) => {
+                      const lines = historyLines(h, household.timezone);
+                      const open = openEntry === h.id;
+                      const by = h.given_by ? memberById(h.given_by)?.display_name.split(" ")[0] : null;
+                      return (
+                        <div key={h.id}>
+                          <button type="button" className="row row--pressable" aria-expanded={open} onClick={() => setOpenEntry(open ? null : h.id)}>
+                            <span className="row__body">
+                              <span className="row__title">{h.plan?.title ?? "A removed reward"}</span>
+                              <span className="row__subtitle">
+                                Given {givenDay.format(new Date(h.given_at))}
+                                {by ? ` by ${by}` : ""}
+                                {lines.length ? ` · ${lines.length} ${lines.length === 1 ? "thing" : "things"} earned it` : ""}
+                              </span>
+                            </span>
+                            <span className="row__trailing reward-history__chevron" aria-hidden="true">
+                              {open ? "▴" : "▾"}
+                            </span>
+                          </button>
+                          {open && (
+                            <ul className="reward-history__ticks">
+                              {lines.length === 0 && <li className="row__subtitle">No record of the ticks for this one.</li>}
+                              {lines.map((line, i) => (
+                                <li key={i}>
+                                  <span className="reward-history__star" aria-hidden="true">
+                                    ★
+                                  </span>
+                                  {line}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              );
+            })()}
           </section>
         );
       })}
