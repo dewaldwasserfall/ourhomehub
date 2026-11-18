@@ -19,6 +19,7 @@ import { expandForRange } from "../calendar/expand";
 import { addDays, timeKey } from "../calendar/time";
 import type { CalendarEventRow } from "../calendar/types";
 import { progressText, rewardStatus, type RewardPlan, type RewardProgress } from "../rewards";
+import { balances, formatAmount, type WalletEntry } from "../wallet";
 import {
   ASSISTANT_MODEL,
   MAX_TURNS,
@@ -245,8 +246,23 @@ async function starProgress(supabase: SupabaseClient, ctx: AssistantContext, inp
     )
     .eq("active", true)
     .order("sort_order");
+  // The wallets too: game time available, money owed.
+  const { data: walletRows } = await supabase
+    .from("wallet_entries")
+    .select("member_id, unit, amount")
+    .in(
+      "member_id",
+      who.map((k) => k.id),
+    );
   const lines: string[] = [];
   for (const kid of who) {
+    const bal = balances((walletRows ?? []) as Pick<WalletEntry, "member_id" | "unit" | "amount">[], kid.id);
+    const hasWallet = ((walletRows ?? []) as Array<{ member_id: string }>).some((w) => w.member_id === kid.id);
+    if (hasWallet) {
+      lines.push(
+        `${kid.display_name.split(" ")[0]}'s wallet: ${formatAmount("minutes", bal.minutes)} of game time available, ${formatAmount("euros", bal.euros)} owed.`,
+      );
+    }
     const own = ((plans ?? []) as RewardPlan[]).filter((p) => p.member_id === kid.id);
     const name = kid.display_name.split(" ")[0];
     if (own.length === 0) {

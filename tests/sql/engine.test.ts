@@ -169,6 +169,7 @@ beforeAll(async () => {
     "20261115000300_board_celebrate_sound.sql",
     "20261117000100_reward_history.sql",
     "20261118000100_week_grid.sql",
+    "20261118000200_wallets.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -1781,6 +1782,66 @@ describe("week grid", () => {
     await actAsAdmin();
     expect(await one(`select public.roll_missed_chores($1) as n`, [householdId])).toMatchObject({ n: expect.any(Number) });
     expect(await one(`select next_due = current_date as today from public.chores where id = $1`, [missed])).toEqual({ today: true });
+  });
+});
+
+describe("wallets", () => {
+  it("earns per confirmed star, takes it back when undone, and lets adults use, pay and adjust", async () => {
+    await actAs("dewald");
+    const kid = (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS.kid.id])).id;
+    const chore = async (title: string) =>
+      (await one<{ id: string }>(`insert into public.chores (household_id, title, every_n, unit, next_due, assigned_to) values ($1, $2, 1, 'day', current_date, $3) returning id`, [householdId, title, kid])).id;
+    const [a, b, other] = [await chore("Wallet A"), await chore("Wallet B"), await chore("Wallet other")];
+    const plan = (
+      await one<{ id: string }>(
+        `insert into public.reward_plans (household_id, member_id, title, period, goal, stars_needed, counts, carry_over, counts_from, reward_type, value_amount, value_per)
+         values ($1, $2, 'Game time', 'day', 'stars', 4, 'linked', false, current_date, 'time', 5, 'star') returning id`,
+        [householdId, kid],
+      )
+    ).id;
+    await db.query(`insert into public.reward_plan_tasks (plan_id, kind, task_id) values ($1, 'chore', $2), ($1, 'chore', $3)`, [plan, a, b]);
+    const minutes = async () => Number((await one<{ m: string }>(`select coalesce(sum(amount), 0) as m from public.wallet_entries where member_id = $1 and unit = 'minutes'`, [kid])).m);
+    const start = await minutes();
+
+    // A type needs a value; a one-off can't have one.
+    await expect(
+      db.query(`insert into public.reward_plans (household_id, member_id, title, period, goal, stars_needed, reward_type) values ($1, $2, 'Bad', 'day', 'stars', 1, 'cash')`, [householdId, kid]),
+    ).rejects.toThrow();
+
+    // Step 1: the board tick waits (nothing yet); confirming earns 5 minutes.
+    await actAs("board");
+    await db.query(`select public.board_set_completion('chore', $1, current_date, true, $2)`, [a, kid]);
+    expect(await minutes()).toBe(start);
+    await actAs("dewald");
+    const tickA = (await one<{ id: string }>(`select id from public.completions where item_id = $1`, [a])).id;
+    await db.query(`select public.confirm_ticks($1, null)`, [[tickA]]);
+    expect(await minutes()).toBe(start + 5);
+
+    // A parent filling one in earns too; a task that isn't linked doesn't.
+    await db.query(`select public.credit_completion('chore', $1, current_date, $2, true)`, [b, kid]);
+    await db.query(`select public.credit_completion('chore', $1, current_date, $2, true)`, [other, kid]);
+    expect(await minutes()).toBe(start + 10);
+
+    // Step 2: undoing a star takes its minutes back out.
+    await db.query(`select public.credit_completion('chore', $1, current_date, $2, false)`, [b, kid]);
+    expect(await minutes()).toBe(start + 5);
+
+    // Step 3: any adult uses time; not more than there is; adjust is signed.
+    //         (The partner here: the test au pair's access has expired.)
+    await actAs("partner");
+    const after = await one<{ b: string }>(`select public.wallet_change($1, 'minutes', 'used', 3, null) as b`, [kid]);
+    expect(Number(after.b)).toBe(start + 2);
+    await expect(db.query(`select public.wallet_change($1, 'minutes', 'used', 1000, null)`, [kid])).rejects.toThrow(/not_enough/);
+    await expect(db.query(`select public.wallet_change($1, 'minutes', 'paid', 1, null)`, [kid])).rejects.toThrow(/invalid_change/);
+    await db.query(`select public.wallet_change($1, 'euros', 'adjust', 10, 'Owed from before')`, [kid]);
+    await db.query(`select public.wallet_change($1, 'euros', 'paid', 2.5, null)`, [kid]);
+    expect(await one(`select sum(amount)::text as e from public.wallet_entries where member_id = $1 and unit = 'euros'`, [kid])).toEqual({ e: "7.50" });
+
+    // Children can't change their wallet; they can read it.
+    await actAs("kid");
+    await expect(db.query(`select public.wallet_change($1, 'minutes', 'adjust', 100, null)`, [kid])).rejects.toThrow(/adults_only/);
+    await expect(db.query(`insert into public.wallet_entries (household_id, member_id, unit, amount, kind) values ($1, $2, 'minutes', 100, 'adjust')`, [householdId, kid])).rejects.toThrow();
+    expect((await all(`select id from public.wallet_entries where member_id = $1`, [kid])).length).toBeGreaterThan(0);
   });
 });
 

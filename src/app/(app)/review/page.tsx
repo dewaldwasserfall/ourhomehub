@@ -4,6 +4,8 @@
  *   1. This week, Monday to today: per person, how many routine steps,
  *      chores, zone tasks and to-dos they ticked off (weekly_review RPC),
  *      plus shopping bought and, for those who can see it, grocery spending.
+ *      Wallets: per child, game time and money earned this week, used or
+ *      paid out, and what's left now.
  *   2. Next week, day by day: calendar events, bins, chores due, holidays
  *      starting or ending, and a new zone fortnight.
  *
@@ -28,6 +30,8 @@ import { nextWeekDays, ranked, reviewWeeks, totalDone, weekHeadline, type WeekCo
 import { canSeeFinances } from "@/lib/roles";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useBudget } from "@/lib/use-budget";
+import { useWallet } from "@/lib/use-wallet";
+import { formatAmount, weekSummary, type WalletUnit } from "@/lib/wallet";
 import { usePlanData } from "@/lib/use-plan-data";
 import type { DayInfo } from "@/lib/types";
 
@@ -61,6 +65,10 @@ export default function ReviewPage() {
   const plan = usePlanData(household.id, weeks.from);
   const calendar = useCalendar(household.id);
   const budget = useBudget(household.id, tz, financeOk);
+  // Children's wallets: this week's earning and spending.
+  const kids = members.filter((m) => m.role === "child");
+  const wallet = useWallet(kids.map((k) => k.id));
+  const weekStartInstant = instantOf(weeks.from, "00:00", tz).toISOString();
 
   // Step 1: this week's counts (adults only; the RPC refuses children).
   const [counts, setCounts] = useState<WeekCounts | null>(null);
@@ -200,6 +208,39 @@ export default function ReviewPage() {
           <p className="section__footer">Nothing ticked off by {quiet.map((m) => m.display_name.split(" ")[0]).join(", ")}.</p>
         )}
       </section>
+
+      {/* 1b. Wallets: earned this week, used / paid, left now */}
+      {kids.some((k) => wallet.entries.some((e) => e.member_id === k.id)) && (
+        <section className="section">
+          <div className="section__header">
+            <span className="section__header-title">Wallets</span>
+          </div>
+          <div className="group">
+            {kids.map((kid) =>
+              (["minutes", "euros"] as WalletUnit[])
+                .filter((u) => wallet.entries.some((e) => e.member_id === kid.id && e.unit === u))
+                .map((u) => {
+                  const w = weekSummary(wallet.entries, kid.id, u, weekStartInstant);
+                  return (
+                    <Link key={`${kid.id}-${u}`} href="/stars" className="row row--link">
+                      <Avatar member={kid} size="mini" />
+                      <span className="row__body">
+                        <span className="row__title">
+                          {kid.display_name.split(" ")[0]}: {u === "minutes" ? "game time" : "money"}
+                        </span>
+                        <span className="row__subtitle">
+                          Earned {formatAmount(u, w.earned)} this week · {u === "minutes" ? "used" : "paid out"} {formatAmount(u, w.spent)}
+                        </span>
+                      </span>
+                      <span className="row__trailing review-total">{formatAmount(u, w.balance)}</span>
+                    </Link>
+                  );
+                }),
+            )}
+          </div>
+          <p className="section__footer">What&rsquo;s left now: game time available, money owed.</p>
+        </section>
+      )}
 
       {/* 2. Next week */}
       <section className="section">

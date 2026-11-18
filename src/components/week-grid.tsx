@@ -121,7 +121,10 @@ export function WeekGrid({
     };
   }, [supabase, load, child.id, plan.id]);
 
-  const grid = useMemo(() => buildWeekGrid({ tasks, memberId: child.id, days, monday, today, ticks, paidIds: paid }), [tasks, child.id, days, monday, today, ticks, paid]);
+  const grid = useMemo(
+    () => buildWeekGrid({ tasks, memberId: child.id, days, monday, today, ticks, paidIds: paid }),
+    [tasks, child.id, days, monday, today, ticks, paid],
+  );
 
   // Step 4: actions. Each one through the board's or the phone's RPC.
   const [busy, setBusy] = useState(false);
@@ -193,6 +196,9 @@ export function WeekGrid({
     na: "not on this day",
   };
   const actions = dayMenu ? dayActions(grid, dayMenu) : { waiting: [], payable: [] };
+  // Time / cash rewards earned per star pay through the wallet instead
+  // (My Wallet: use time, pay out): no paying out single stars here.
+  const canPayStars = !((plan.reward_type === "time" || plan.reward_type === "cash") && plan.value_per === "star");
 
   return (
     <div className={`week-grid week-grid--${surface}`}>
@@ -202,7 +208,13 @@ export function WeekGrid({
           ‹
         </button>
         <span className="week-grid__week">{weeksBack === 0 ? "This week" : weeksBack === 1 ? "Last week" : `Week of ${dayLabel(monday)}`}</span>
-        <button type="button" className="week-grid__arrow" onClick={() => setWeeksBack((w) => Math.max(0, w - 1))} disabled={weeksBack === 0} aria-label="Next week">
+        <button
+          type="button"
+          className="week-grid__arrow"
+          onClick={() => setWeeksBack((w) => Math.max(0, w - 1))}
+          disabled={weeksBack === 0}
+          aria-label="Next week"
+        >
           ›
         </button>
       </div>
@@ -220,7 +232,12 @@ export function WeekGrid({
                 {grid.dates.map((d) => (
                   <th key={d} scope="col" className={d === today ? "week-grid__today" : undefined}>
                     {admin && d <= today ? (
-                      <button type="button" className="week-grid__day" onClick={() => setDayMenu(d)} aria-label={`${dayLabel(d)}: confirm or pay out`}>
+                      <button
+                        type="button"
+                        className="week-grid__day"
+                        onClick={() => setDayMenu(d)}
+                        aria-label={`${dayLabel(d)}: confirm or pay out`}
+                      >
                         {dayLabel(d)}
                       </button>
                     ) : (
@@ -267,54 +284,88 @@ export function WeekGrid({
           </table>
         </div>
       )}
-      <p className="week-grid__legend">☆ to do · ⏳ waiting for a parent · ★ counts · <span className="week-grid__paid-sample">★</span> paid out</p>
+      <p className="week-grid__legend">
+        ☆ to do · ⏳ waiting for a parent · ★ counts · <span className="week-grid__paid-sample">★</span> paid out
+      </p>
 
       {/* A parent: one cell */}
-      <Sheet open={!!cellMenu} onClose={() => setCellMenu(null)} title={cellMenu ? `${cellMenu.row.task.title}, ${dayLabel(cellMenu.cell.date)}` : ""}>
+      <Sheet
+        open={!!cellMenu}
+        onClose={() => setCellMenu(null)}
+        title={cellMenu ? `${cellMenu.row.task.title}, ${dayLabel(cellMenu.cell.date)}` : ""}
+      >
         {cellMenu && (
           <div className="week-grid__menu">
             {(cellMenu.cell.state === "empty" || cellMenu.cell.state === "missed") && (
-              <button type="button" className="week-grid__action week-grid__action--go" onClick={() => {
+              <button
+                type="button"
+                className="week-grid__action week-grid__action--go"
+                onClick={() => {
                   setCellMenu(null);
                   void credit(cellMenu.row.task, cellMenu.cell.date, true);
-                }}>
+                }}
+              >
                 ★ Mark done for {child.display_name.split(" ")[0]}
               </button>
             )}
             {cellMenu.cell.state === "pending" && (
               <>
-                <button type="button" className="week-grid__action week-grid__action--go" onClick={() => {
-                  setCellMenu(null);
-                  void review([cellMenu.cell.completionId!], true);
-                }}>
+                <button
+                  type="button"
+                  className="week-grid__action week-grid__action--go"
+                  onClick={() => {
+                    setCellMenu(null);
+                    void review([cellMenu.cell.completionId!], true);
+                  }}
+                >
                   Confirm ✓
                 </button>
-                <button type="button" className="week-grid__action week-grid__action--pay" onClick={() => {
-                  setCellMenu(null);
-                  void payOut([cellMenu.cell.completionId!]);
-                }}>
-                  Confirm and pay out
-                </button>
-                <button type="button" className="week-grid__action" onClick={() => {
-                  setCellMenu(null);
-                  void review([cellMenu.cell.completionId!], false);
-                }}>
+                {canPayStars && (
+                  <button
+                    type="button"
+                    className="week-grid__action week-grid__action--pay"
+                    onClick={() => {
+                      setCellMenu(null);
+                      void payOut([cellMenu.cell.completionId!]);
+                    }}
+                  >
+                    Confirm and pay out
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="week-grid__action"
+                  onClick={() => {
+                    setCellMenu(null);
+                    void review([cellMenu.cell.completionId!], false);
+                  }}
+                >
                   Not done
                 </button>
               </>
             )}
             {cellMenu.cell.state === "done" && (
               <>
-                <button type="button" className="week-grid__action week-grid__action--pay" onClick={() => {
-                  setCellMenu(null);
-                  void payOut([cellMenu.cell.completionId!]);
-                }}>
-                  Pay out this star
-                </button>
-                <button type="button" className="week-grid__action" onClick={() => {
-                  setCellMenu(null);
-                  void credit(cellMenu.row.task, cellMenu.cell.date, false);
-                }}>
+                {canPayStars && (
+                  <button
+                    type="button"
+                    className="week-grid__action week-grid__action--pay"
+                    onClick={() => {
+                      setCellMenu(null);
+                      void payOut([cellMenu.cell.completionId!]);
+                    }}
+                  >
+                    Pay out this star
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="week-grid__action"
+                  onClick={() => {
+                    setCellMenu(null);
+                    void credit(cellMenu.row.task, cellMenu.cell.date, false);
+                  }}
+                >
                   Undo: not done
                 </button>
               </>
@@ -333,24 +384,33 @@ export function WeekGrid({
               className="week-grid__action week-grid__action--go"
               disabled={actions.waiting.length === 0}
               onClick={() => {
-                  setDayMenu(null);
-                  void review(actions.waiting, true);
-                }}
+                setDayMenu(null);
+                void review(actions.waiting, true);
+              }}
             >
               Confirm all waiting ({actions.waiting.length})
             </button>
-            <button
-              type="button"
-              className="week-grid__action week-grid__action--pay"
-              disabled={actions.payable.length === 0}
-              onClick={() => {
+            {canPayStars && (
+              <button
+                type="button"
+                className="week-grid__action week-grid__action--pay"
+                disabled={actions.payable.length === 0}
+                onClick={() => {
                   setDayMenu(null);
                   void payOut(actions.payable);
                 }}
-            >
-              Pay out all stars ({actions.payable.length})
-            </button>
-            {actions.waiting.length === 0 && actions.payable.length === 0 && <p className="board-muted">Nothing to confirm or pay out on this day.</p>}
+              >
+                Pay out all stars ({actions.payable.length})
+              </button>
+            )}
+            {!canPayStars && (
+              <p className="board-muted">
+                Each confirmed star goes into {child.display_name.split(" ")[0]}&rsquo;s wallet: use or pay it out from My Wallet.
+              </p>
+            )}
+            {canPayStars && actions.waiting.length === 0 && actions.payable.length === 0 && (
+              <p className="board-muted">Nothing to confirm or pay out on this day.</p>
+            )}
           </div>
         )}
       </Sheet>

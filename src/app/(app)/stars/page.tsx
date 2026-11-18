@@ -36,6 +36,9 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { usePlanData } from "@/lib/use-plan-data";
 import { useRewards } from "@/lib/use-rewards";
 import { useStars } from "@/lib/use-stars";
+import { useWallet } from "@/lib/use-wallet";
+import { valueText } from "@/lib/wallet";
+import { WalletCard } from "@/components/wallet-card";
 
 /** A task a plan can link to, with a readable label. */
 interface TaskOption {
@@ -56,13 +59,17 @@ interface Draft {
   counts: "all" | "linked";
   carryOver: boolean;
   tasks: Set<string>; // "kind:id"
+  /** Time (minutes) / Cash (euros) / One-off, and what it's worth. */
+  type: "time" | "cash" | "one_off";
+  value: string;
+  valuePer: "star" | "goal";
 }
 
 const taskKey = (kind: string, id: string) => `${kind}:${id}`;
 
 export default function StarsPage() {
   const supabase = getSupabaseBrowserClient();
-  const { household, members, me, memberById, updateMember } = useHousehold();
+  const { household, members, me, meIsAdult, memberById, updateMember } = useHousehold();
   const toast = useToast();
   const parent = isParent(me);
   const today = dateKey(new Date(), household.timezone);
@@ -70,6 +77,8 @@ export default function StarsPage() {
   const kidIds = kids.map((k) => k.id);
   const { stats } = useStars(kidIds, today);
   const rewards = useRewards(kidIds, today);
+  // Each child's wallet (game time, money owed); adults change it.
+  const wallet = useWallet(kidIds);
   // Titles of linked tasks, and ticks since a week before the week began.
   const plan = usePlanData(household.id, addDays(today, -14));
 
@@ -169,7 +178,20 @@ export default function StarsPage() {
   // Step 2: the plan editor (parents).
   const [draft, setDraft] = useState<Draft | null>(null);
   const openNew = (memberId: string) =>
-    setDraft({ id: null, memberId, title: "", period: "week", goal: "stars", starsNeeded: "20", counts: "all", carryOver: true, tasks: new Set() });
+    setDraft({
+      id: null,
+      memberId,
+      title: "",
+      period: "week",
+      goal: "stars",
+      starsNeeded: "20",
+      counts: "all",
+      carryOver: true,
+      tasks: new Set(),
+      type: "one_off",
+      value: "",
+      valuePer: "star",
+    });
   const openEdit = (p: RewardPlan) =>
     setDraft({
       id: p.id,
@@ -181,6 +203,9 @@ export default function StarsPage() {
       counts: p.counts,
       carryOver: p.carry_over,
       tasks: new Set(rewards.tasksFor(p.id).map((t) => taskKey(t.kind, t.task_id))),
+      type: p.reward_type ?? "one_off",
+      value: p.value_amount ? String(Number(p.value_amount)) : "",
+      valuePer: p.value_per ?? "star",
     });
 
   async function save() {
@@ -188,7 +213,15 @@ export default function StarsPage() {
     // Step 2a: "all tasks" only makes sense with linked tasks.
     const counts = draft.goal === "all_tasks" ? "linked" : draft.counts;
     if (counts === "linked" && draft.tasks.size === 0) return void toast.show("Pick at least one task.");
+    // Step 2a-2: time and cash need a value. Per-star rewards don't carry
+    //            stars over: each star's value is in the wallet already.
+    const value = Number(draft.value.replace(",", "."));
+    if (draft.type !== "one_off" && !(value > 0)) return void toast.show(draft.type === "time" ? "How many minutes is it worth?" : "How much is it worth?");
+    const perStar = draft.type !== "one_off" && draft.valuePer === "star";
     const fields = {
+      reward_type: draft.type,
+      value_amount: draft.type === "one_off" ? null : Math.round(value * 100) / 100,
+      value_per: draft.type === "one_off" ? null : draft.valuePer,
       household_id: household.id,
       member_id: draft.memberId,
       title: draft.title.trim(),
@@ -196,7 +229,7 @@ export default function StarsPage() {
       goal: draft.goal,
       stars_needed: draft.goal === "stars" ? Math.max(1, Math.min(1000, parseInt(draft.starsNeeded, 10) || 1)) : null,
       counts,
-      carry_over: draft.carryOver,
+      carry_over: perStar ? false : draft.carryOver,
     };
     // Step 2b: the plan, then its links (replaced wholesale).
     const res = draft.id
@@ -270,6 +303,15 @@ export default function StarsPage() {
             <div className="group">
               <StarCard stats={stats[kid.id]} plan={headline} progress={headline ? rewards.progress[headline.id] : undefined} />
             </div>
+            <WalletCard
+              child={kid}
+              entries={wallet.entries}
+              plans={kidPlans}
+              progress={rewards.progress}
+              surface="phone"
+              admin={meIsAdult}
+              onMessage={(m) => toast.show(m)}
+            />
 
             {/* Step 4: each plan, with its linked tasks underneath */}
             {kidPlans.map((p) => {
@@ -284,6 +326,7 @@ export default function StarsPage() {
                       <span className="row__title">
                         {p.title}
                         <span className="reward-plan__period">{PERIOD_LABELS[p.period]}</span>
+                        {valueText(p) && <span className="reward-plan__period">{valueText(p)}</span>}
                       </span>
                       <span className="row__subtitle">
                         {status === "earned" ? "Earned! " : status === "given" ? "Given ✓ · " : ""}
@@ -293,7 +336,7 @@ export default function StarsPage() {
                     </span>
                     {parent && (
                       <span className="row__trailing">
-                        {status === "earned" && (
+                        {status === "earned" && !(p.reward_type !== "one_off" && p.value_per === "star") && (
                           <button type="button" className="chip-button chip-button--strong" onClick={() => give(p)}>
                             {confirm === `give:${p.id}` ? "Tap to confirm" : "Give"}
                           </button>
@@ -440,6 +483,43 @@ export default function StarsPage() {
               maxLength={80}
               autoFocus={!draft.id}
             />
+            {/* What kind of reward, and what it's worth */}
+            <Segmented
+              label="Type"
+              value={draft.type}
+              onChange={(type) => setDraft({ ...draft, type })}
+              options={[
+                { value: "time", label: "Time" },
+                { value: "cash", label: "Cash" },
+                { value: "one_off", label: "One-off" },
+              ]}
+            />
+            {draft.type !== "one_off" && (
+              <div className="group">
+                <label className="form-row">
+                  <span className="form-row__label">{draft.type === "time" ? "Minutes" : "Euros"}</span>
+                  <input
+                    inputMode="decimal"
+                    className="pill-input"
+                    style={{ width: 90, textAlign: "center" }}
+                    placeholder={draft.type === "time" ? "5" : "0.20"}
+                    value={draft.value}
+                    onChange={(e) => setDraft({ ...draft, value: e.target.value.replace(/[^0-9.,]/g, "") })}
+                  />
+                </label>
+                <div className="form-row">
+                  <Segmented
+                    label="Earned"
+                    value={draft.valuePer}
+                    onChange={(valuePer) => setDraft({ ...draft, valuePer })}
+                    options={[
+                      { value: "star", label: "For every star" },
+                      { value: "goal", label: "When the goal is reached" },
+                    ]}
+                  />
+                </div>
+              </div>
+            )}
             <Segmented
               label="Repeats"
               value={draft.period}
@@ -474,7 +554,7 @@ export default function StarsPage() {
                     onChange={(e) => setDraft({ ...draft, starsNeeded: e.target.value })}
                   />
                 </label>
-                {draft.period !== "once" && (
+                {draft.period !== "once" && !(draft.type !== "one_off" && draft.valuePer === "star") && (
                   <div className="form-row">
                     <span className="form-row__label">Leftover stars carry over</span>
                     <button

@@ -22,6 +22,14 @@ export interface RewardPlan {
   active: boolean;
   sort_order: number;
   created_at: string;
+  /**
+   * time (minutes), cash (euros) or one_off (a thing). Time and cash have a
+   * value, earned per confirmed star or when the goal is given; it goes in
+   * the child's wallet (src/lib/wallet.ts).
+   */
+  reward_type?: "time" | "cash" | "one_off";
+  value_amount?: number | null;
+  value_per?: "star" | "goal" | null;
 }
 
 export interface RewardPlanTask {

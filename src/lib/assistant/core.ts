@@ -94,7 +94,8 @@ export const TOOLS = [
   },
   {
     name: "star_progress",
-    description: "A child's rewards: stars or tasks so far towards each reward, and whether it's earned or given.",
+    description:
+      "A child's rewards (stars or tasks so far, earned or given) and their wallet: minutes of game time available and money owed.",
     input_schema: {
       type: "object",
       properties: { child: { type: "string", description: "The child's first name; leave out for all children." } },

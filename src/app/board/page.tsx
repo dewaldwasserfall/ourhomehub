@@ -28,6 +28,7 @@ import { BoardExpanded } from "@/components/board/board-expanded";
 import { useBoardAdmin } from "@/components/board/board-admin";
 import { CelebrationLayer } from "@/components/celebration";
 import { DishwasherCard } from "@/components/dishwasher-card";
+import { WalletCard } from "@/components/wallet-card";
 import { WeekGrid } from "@/components/week-grid";
 import { Sheet } from "@/components/sheet";
 import { useToast } from "@/components/toast";
@@ -46,6 +47,7 @@ import type { DayInfo, Member } from "@/lib/types";
 import { usePlanData } from "@/lib/use-plan-data";
 import { progressShort, rewardStatus } from "@/lib/rewards";
 import { useRewards } from "@/lib/use-rewards";
+import { useWallet } from "@/lib/use-wallet";
 import { useStars } from "@/lib/use-stars";
 
 /** Friendly messages for the board RPCs' errors. */
@@ -80,6 +82,8 @@ export default function BoardTodayPage() {
   const kidIds = useMemo(() => members.filter((m) => m.role === "child").map((m) => m.id), [members]);
   const stars = useStars(kidIds, today);
   const rewards = useRewards(kidIds, today);
+  // 1b-2. Each child's wallet (game time, money): live.
+  const wallet = useWallet(kidIds);
 
   // 1c. Celebrations: the chime is a per-board switch (me.id is the board's
   //     id here). Sound is only allowed after a tap, so unlock it on the first.
@@ -286,6 +290,21 @@ export default function BoardTodayPage() {
       </div>
     );
 
+    // Step 2b: My Wallet (tap: the wallet; adults use time / pay out while
+    //          the board is unlocked).
+    const walletCard = isKid && (
+      <WalletCard
+        child={person}
+        entries={wallet.entries}
+        plans={kidPlans}
+        progress={rewards.progress}
+        surface="board"
+        admin={!!admin}
+        onMessage={(m) => toast.show(m)}
+        adminError={adminError}
+      />
+    );
+
     // Step 3: the tasks (tap to tick, exactly as on the board).
     const tasks = (
       <>
@@ -332,6 +351,7 @@ export default function BoardTodayPage() {
         return (
           <>
             {rewardCards}
+            {walletCard}
             <WeekGrid
               child={person}
               plan={gridPlan}
@@ -352,6 +372,7 @@ export default function BoardTodayPage() {
       return (
         <>
           {rewardCards}
+          {walletCard}
           {tasks}
         </>
       );
@@ -362,6 +383,7 @@ export default function BoardTodayPage() {
           {header}
           {rewardCards}
         </div>
+        {walletCard}
         {tasks}
       </>
     );
