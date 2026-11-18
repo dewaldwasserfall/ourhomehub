@@ -9,6 +9,11 @@
  *     plans, and mark an earned reward as Given.
  *
  * Progress comes from the database (reward_progress), from confirmed ticks.
+ *
+ * Who counts as a parent (owner only): one switch per adult, like "Who can
+ * see trips". A parent sets up rewards, gives them, pays out stars, fills in
+ * past days and can unlock the board with a PIN. Any adult can already
+ * confirm a child's waiting ticks.
  */
 "use client";
 
@@ -26,7 +31,7 @@ import { WeekGrid } from "@/components/week-grid";
 import { addDays, dateKey } from "@/lib/calendar/time";
 import { friendlyError } from "@/lib/errors";
 import { PERIOD_LABELS, historyLines, linkedTaskDone, type RewardHistoryEntry, progressText, rewardStatus, type RewardPeriod, type RewardPlan, type RewardPlanTask } from "@/lib/rewards";
-import { isParent } from "@/lib/roles";
+import { isParent, roleLabel } from "@/lib/roles";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { usePlanData } from "@/lib/use-plan-data";
 import { useRewards } from "@/lib/use-rewards";
@@ -84,6 +89,22 @@ export default function StarsPage() {
     void loadHistory();
   }, [loadHistory, rewards.progress]);
   const givenDay = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: household.timezone });
+
+  // Step 1d: who counts as a parent (owner's switches), kept locally after
+  //          each change (as on Trips).
+  const isOwner = me.role === "owner";
+  const [parents, setParentsState] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(members.map((m) => [m.id, m.role === "owner" || !!m.is_parent])),
+  );
+  async function setParent(memberId: string, on: boolean) {
+    setParentsState((cur) => ({ ...cur, [memberId]: on }));
+    const { error } = await supabase.rpc("set_parent", { p_member_id: memberId, p_on: on });
+    if (error) {
+      setParentsState((cur) => ({ ...cur, [memberId]: !on }));
+      return void toast.show(friendlyError(error));
+    }
+    updateMember(memberId, { is_parent: on });
+  }
 
   // Step 1c: a child's board view (parents): List, or Week grid with its
   //          days and which reward's tasks make the rows.
@@ -541,6 +562,43 @@ export default function StarsPage() {
       </Sheet>
       {/* The child's own phone celebrates an earned reward (once per period) */}
       {me.role === "child" && <CelebrationLayer plans={rewards.plans} progress={rewards.progress} />}
+      {/* Owner: who can give rewards (adults only) */}
+      {isOwner && (
+        <section className="section">
+          <div className="section__header">
+            <span className="section__header-title">Who can give rewards</span>
+          </div>
+          <div className="group">
+            {members
+              .filter((m) => m.role !== "child")
+              .map((m) => {
+                const on = !!parents[m.id];
+                return (
+                  <div key={m.id} className="row">
+                    <Avatar member={m} size="mini" />
+                    <span className="row__body">
+                      <span className="row__title">{m.display_name}</span>
+                      <span className="row__subtitle">{roleLabel(m.role)}</span>
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      className="switch"
+                      aria-label={`${m.display_name} can give rewards`}
+                      aria-checked={on}
+                      disabled={m.role === "owner"}
+                      onClick={() => setParent(m.id, !on)}
+                    />
+                  </div>
+                );
+              })}
+          </div>
+          <p className="section__footer">
+            They can set up and give rewards, pay out stars, fill in missed days, and unlock the board with their own PIN. Every adult can already confirm a child&rsquo;s ticks.
+          </p>
+        </section>
+      )}
+
       {/* A child's board view */}
       <Sheet
         open={!!view}
