@@ -6,7 +6,8 @@
  * compare it (notify_check_secret), so the secret is never copied to Vercel.
  *
  * Also rides along: grocery budget sync, SmartThings token refresh, pruning
- * old device events and checking the dishwasher (one cron job for all).
+ * old device events, checking the dishwasher and moving children's missed
+ * chores on to their next day (one cron job for all).
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { syncStaleBudgets } from "@/lib/bunq/sync";
@@ -17,6 +18,17 @@ import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
+
+/** Each household's children's missed chores → their next day. */
+async function rollMissedChores(admin: ReturnType<typeof getSupabaseAdminClient>): Promise<number> {
+  const { data: households } = await admin.from("households").select("id");
+  let moved = 0;
+  for (const h of (households ?? []) as Array<{ id: string }>) {
+    const { data } = await admin.rpc("roll_missed_chores", { p_household_id: h.id });
+    moved += typeof data === "number" ? data : 0;
+  }
+  return moved;
+}
 
 export async function POST(request: NextRequest) {
   // Step 1: only the database job may run this.
@@ -49,7 +61,13 @@ export async function POST(request: NextRequest) {
       console.error("[dishwasher] poll failed", err);
       return 0;
     });
-    return NextResponse.json({ ...notifications, budgets, smartthings, appliances });
+    // Missed, not late: a child's repeating chore that wasn't done moves on
+    // to its next scheduled day (see roll_missed_chores).
+    const rolled = await rollMissedChores(admin).catch((err) => {
+      console.error("[chores] roll missed failed", err);
+      return 0;
+    });
+    return NextResponse.json({ ...notifications, budgets, smartthings, appliances, rolled });
   } catch (err) {
     console.error("[notify] run failed", err);
     return NextResponse.json({ error: "notify_failed" }, { status: 500 });

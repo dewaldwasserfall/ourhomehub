@@ -211,12 +211,19 @@ export default function ListPage() {
   const swipeAction = (entry: ListEntryWithItem) =>
     entry.source === "suggested" && entry.status === "open" ? dismiss(entry) : remove(entry);
 
-  /** To-dos: "Today", "Tomorrow", "2 days ago" (overdue in red). */
+  /**
+   * To-dos: "Today", "Tomorrow", "2 days ago" (overdue in red). A child's
+   * open to-do whose day has passed reads "Missed …": it has left their
+   * board and Today, so a parent can delete it or give it a new date.
+   */
   const today = dateKey(new Date(), household.timezone);
-  const dueOf = (entry: ListEntryWithItem) =>
-    !isShopping && entry.due_date
-      ? { label: describeDay(entry.due_date, today), overdue: entry.due_date < today }
-      : undefined;
+  const dueOf = (entry: ListEntryWithItem) => {
+    if (isShopping || !entry.due_date) return undefined;
+    const past = entry.due_date < today;
+    const missed = past && entry.status === "open" && memberById(entry.assigned_to)?.role === "child";
+    const day = describeDay(entry.due_date, today);
+    return { label: missed ? `Missed ${day.toLowerCase()}` : day, overdue: past };
+  };
 
   /** Shared per-row props: due date, assignee, and what a child may do. */
   const rowProps = (entry: ListEntryWithItem) => ({

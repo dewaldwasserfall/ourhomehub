@@ -83,6 +83,12 @@ export function boardColumns(input: {
 }): BoardColumn[] {
   const { plan, todos, members, today, mode, zoneRotationStart } = input;
   const items: BoardItem[] = [];
+  // Missed, not late: children's tasks never show as "Late". A child's
+  // repeating chore that was missed is simply today's (the background job
+  // moves its due date on); a child's one-off to-do whose day has passed
+  // leaves the board (parents still see it as "Missed" on their phones).
+  const childIds = new Set(members.filter((m) => m.role === "child").map((m) => m.id));
+  const isChild = (id: string | null) => id !== null && childIds.has(id);
   const completionFor = (kind: CompletionKind, id: string, forDate: string) =>
     plan.completions.find((c) => c.kind === kind && c.item_id === id && c.for_date === forDate);
 
@@ -121,13 +127,14 @@ export function boardColumns(input: {
       state: tickState(row),
       doneFor: row?.done_for ?? null,
       boardCanUndo: boardCanUndo(row),
-      overdue: !row && chore.next_due < today,
+      overdue: !row && chore.next_due < today && !isChild(chore.assigned_to),
     });
   }
 
   // Step 2c: to-dos due today, late or undated; and those ticked today.
   for (const todo of todos) {
     if (todo.status === "open" && todo.due_date && todo.due_date > today) continue;
+    if (todo.status === "open" && todo.due_date && todo.due_date < today && isChild(todo.assigned_to)) continue;
     items.push({
       key: `todo:${todo.id}`,
       kind: "todo",

@@ -168,6 +168,7 @@ beforeAll(async () => {
     "20261115000200_board_admin.sql",
     "20261115000300_board_celebrate_sound.sql",
     "20261117000100_reward_history.sql",
+    "20261118000100_week_grid.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -904,10 +905,14 @@ describe("phase 3: routines, zones and chores", () => {
     await db.query(`select public.set_completion('chore', $1, '2026-11-14', false)`, [choreId]);
     expect(await due()).toBe("2026-11-13");
 
+    // Months clamp at the month's end (31 Jan → 28 Feb).
     await actAs("dewald");
-    await db.query(`update public.chores set unit = 'month', every_n = 1 where id = $1`, [choreId]);
+    await db.query(`update public.chores set unit = 'month', every_n = 1, next_due = '2027-01-31' where id = $1`, [choreId]);
+    await db.query(`select public.set_completion('chore', $1, '2027-01-31', true)`, [choreId]);
+    expect(await due()).toBe("2027-02-28");
+    // Filling in a past day before the due date leaves the schedule alone.
     await db.query(`select public.set_completion('chore', $1, '2026-01-31', true)`, [choreId]);
-    expect(await due()).toBe("2026-02-28");
+    expect(await due()).toBe("2027-02-28");
   });
 
   it("deleting a chore deletes its ticks; strangers can't tick anything here", async () => {
@@ -1712,6 +1717,70 @@ describe("reward history", () => {
     // One left over towards the next reward.
     const left = await one<{ progress: number }>(`select progress from public.reward_progress($1, current_date) where plan_id = $2`, [kid, plan]);
     expect(left.progress).toBe(1);
+  });
+});
+
+describe("week grid", () => {
+  it("lets parents set the board view, credit a past day, pay out stars once, and moves kids' missed chores on", async () => {
+    await actAs("dewald");
+    const kid = (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS.kid.id])).id;
+    const chore = async (title: string, nextDue: string) =>
+      (await one<{ id: string }>(`insert into public.chores (household_id, title, every_n, unit, next_due, assigned_to) values ($1, $2, 1, 'day', ${nextDue}, $3) returning id`, [householdId, title, kid])).id;
+    const [feed, table] = [await chore("Grid feed", "current_date"), await chore("Grid table", "current_date")];
+    const plan = (
+      await one<{ id: string }>(
+        `insert into public.reward_plans (household_id, member_id, title, period, goal, stars_needed, counts, carry_over, counts_from) values ($1, $2, 'Grid stars', 'day', 'stars', 4, 'linked', true, current_date - 7) returning id`,
+        [householdId, kid],
+      )
+    ).id;
+    await db.query(`insert into public.reward_plan_tasks (plan_id, kind, task_id) values ($1, 'chore', $2), ($1, 'chore', $3)`, [plan, feed, table]);
+
+    // Step 1: board view. Parents only, real days, the child's own plan.
+    await actAs("kid");
+    await expect(db.query(`select public.set_board_view($1, 'week_grid', '{1,2,3,4,5}', $2)`, [kid, plan])).rejects.toThrow(/parents_only/);
+    await expect(db.query(`update public.members set board_style = 'week_grid' where id = $1`, [kid])).rejects.toThrow();
+    await actAs("dewald");
+    await expect(db.query(`select public.set_board_view($1, 'week_grid', '{0,9}', $2)`, [kid, plan])).rejects.toThrow(/invalid_days/);
+    await db.query(`select public.set_board_view($1, 'week_grid', '{5,1,2,3,4}', $2)`, [kid, plan]);
+    expect(await one(`select board_style, board_days, board_plan_id from public.members where id = $1`, [kid])).toEqual({
+      board_style: "week_grid",
+      board_days: [1, 2, 3, 4, 5],
+      board_plan_id: plan,
+    });
+
+    // Step 2: a parent credits two days ago; it counts at once and the
+    //         chore's due date (today) doesn't go backwards.
+    await db.query(`select public.credit_completion('chore', $1, current_date - 2, $2, true)`, [feed, kid]);
+    expect(await one(`select next_due = current_date as same from public.chores where id = $1`, [feed])).toEqual({ same: true });
+    expect(await one(`select pending, done_for, confirmed_by is not null as confirmed from public.completions where item_id = $1`, [feed])).toEqual({
+      pending: false,
+      done_for: kid,
+      confirmed: true,
+    });
+    await expect(db.query(`select public.credit_completion('chore', $1, current_date + 1, $2, true)`, [feed, kid])).rejects.toThrow(/not_yet/);
+
+    // Step 3: the child ticks today on the board (waiting); a parent pays out
+    //         both: the waiting one is confirmed, both are used up, once.
+    await actAs("board");
+    await db.query(`select public.board_set_completion('chore', $1, current_date, true, $2)`, [table, kid]);
+    await actAs("dewald");
+    const ids = (await all<{ id: string }>(`select id from public.completions where item_id in ($1, $2)`, [feed, table])).map((r) => r.id);
+    const progress = async () => (await one<{ progress: number }>(`select progress from public.reward_progress($1, current_date) where plan_id = $2`, [kid, plan])).progress;
+    expect(await progress()).toBe(1); // the credited one; today's is still waiting
+    expect(await one(`select public.pay_out_stars($1, $2) as n`, [plan, ids])).toEqual({ n: 2 });
+    expect(await one(`select pending from public.completions where item_id = $1`, [table])).toEqual({ pending: false });
+    expect(await progress()).toBe(0);
+    expect(await one(`select public.pay_out_stars($1, $2) as n`, [plan, ids])).toEqual({ n: 0 }); // not twice
+    // Only parents pay out.
+    await actAs("kid");
+    await expect(db.query(`select public.pay_out_stars($1, $2)`, [plan, ids])).rejects.toThrow(/parents_only/);
+
+    // Step 4: missed, not late: a child's daily chore due 3 days ago moves to today.
+    await actAs("dewald");
+    const missed = await chore("Grid missed", "current_date - 3");
+    await actAsAdmin();
+    expect(await one(`select public.roll_missed_chores($1) as n`, [householdId])).toMatchObject({ n: expect.any(Number) });
+    expect(await one(`select next_due = current_date as today from public.chores where id = $1`, [missed])).toEqual({ today: true });
   });
 });
 

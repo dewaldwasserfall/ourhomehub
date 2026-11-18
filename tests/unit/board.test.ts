@@ -69,15 +69,27 @@ describe("board columns", () => {
     const shannon = cols.find((c) => c.memberId === "shannon")!;
     expect(shannon.items.find((i) => i.title === "Make bed")).toMatchObject({ state: "pending", boardCanUndo: true });
     expect(shannon.doneCount).toBe(1);
-    // A late chore sorts first and is marked late.
+    // A child's missed chore shows as today's, not "Late".
     const lennon = cols.find((c) => c.memberId === "lennon")!;
-    expect(lennon.items[0]).toMatchObject({ title: "Old one", overdue: true });
+    expect(lennon.items.find((i) => i.title === "Old one")).toMatchObject({ overdue: false });
   });
 
   it("moves an unassigned to-do to the column of whoever did it", () => {
     const cols = columns({ todos: [todo("Feed the fish", { status: "done", pending: true, via_board: true, done_for: "lennon" })] });
     expect(cols.find((c) => c.memberId === null)).toBeUndefined();
     expect(cols.find((c) => c.memberId === "lennon")!.items.find((i) => i.title === "Feed the fish")).toMatchObject({ state: "pending" });
+  });
+
+  it("missed, not late: children's chores are just today's; their missed one-off to-dos leave the board", () => {
+    const cols = columns({
+      chores: [chore("Set table", "2026-11-14", "lennon"), chore("Bins", "2026-11-14", null)],
+      todos: [todo("Tidy room", { due_date: "2026-11-15", assigned_to: "lennon" }), todo("Post letter", { due_date: "2026-11-15" })],
+    });
+    const items = cols.flatMap((c) => c.items);
+    expect(items.find((i) => i.title === "Set table")?.overdue).toBe(false);
+    expect(items.find((i) => i.title === "Bins")?.overdue).toBe(true); // not a child's: still late
+    expect(items.map((i) => i.title)).not.toContain("Tidy room");
+    expect(items.find((i) => i.title === "Post letter")?.overdue).toBe(true);
   });
 
   it("hides to-dos due later", () => {

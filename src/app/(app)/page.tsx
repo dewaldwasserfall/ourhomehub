@@ -284,11 +284,15 @@ export default function TodayPage() {
   }, [plan.routines, plan.steps, mode, today, isDone, isMine]);
 
   // 3c. To do: to-dos (due, overdue or undated) and chores that are due.
+  //     Missed, not late: a child's missed one-off to-do drops off their
+  //     Today, and their missed chores show as today's, not "late".
   const toDo = useMemo(() => {
     const items: Array<TickItem & { sortKey: string }> = [];
+    const isChild = (id: string | null) => !!id && memberById(id)?.role === "child";
     for (const t of todos) {
       if (t.due_date && t.due_date > today) continue;
       if (!isMine(t.assigned_to)) continue;
+      if (t.due_date && t.due_date < today && isChild(t.assigned_to) && !meIsAdult) continue;
       items.push({
         key: `todo:${t.id}`,
         kind: "todo",
@@ -304,7 +308,7 @@ export default function TodayPage() {
     if (mode) {
       for (const c of plan.chores) {
         if (!choreDueOn(c, today, mode) || !isMine(c.assigned_to)) continue;
-        const late = daysBetweenKeys(c.next_due, today);
+        const late = isChild(c.assigned_to) ? 0 : daysBetweenKeys(c.next_due, today);
         items.push({
           key: `chore:${c.id}`,
           kind: "chore",
@@ -319,7 +323,7 @@ export default function TodayPage() {
       }
     }
     return items.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
-  }, [todos, plan.chores, mode, today, isMine]);
+  }, [todos, plan.chores, mode, today, isMine, memberById, meIsAdult]);
 
   // 3d. This fortnight's zone.
   const zone = useMemo(() => {

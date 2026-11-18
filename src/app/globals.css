@@ -3879,3 +3879,180 @@ textarea.input {
 .reward-history__star {
   color: #ffb800;
 }
+
+/* -------------------------------------------------------------------------
+   Week grid: a child's reward tasks by day
+   ------------------------------------------------------------------------- */
+.week-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.week-grid__nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.week-grid__week {
+  min-width: 150px;
+  text-align: center;
+  font-weight: 700;
+}
+.week-grid__arrow {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--fill);
+  color: var(--ink);
+  font-size: 24px;
+  line-height: 1;
+}
+.week-grid__arrow:disabled {
+  opacity: 0.35;
+}
+.week-grid__scroll {
+  overflow-x: auto;
+}
+.week-grid__table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 6px;
+}
+.week-grid__table th,
+.week-grid__table td {
+  text-align: center;
+  font-weight: 600;
+}
+.week-grid__table thead th {
+  color: var(--ink-2);
+  font-size: 15px;
+  padding: 4px 2px;
+}
+.week-grid__corner {
+  text-align: left !important;
+  color: var(--ink) !important;
+}
+.week-grid__task {
+  text-align: left !important;
+  font-weight: 600;
+  padding-right: 8px;
+  min-width: 140px;
+}
+.week-grid__day {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 6px 8px;
+  border-radius: 10px;
+  text-decoration: underline dotted;
+  text-underline-offset: 4px;
+}
+th.week-grid__today,
+.week-grid__table thead th.week-grid__today {
+  color: var(--accent);
+}
+td.week-grid__today {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-radius: 14px;
+}
+.week-grid__cell {
+  width: 100%;
+  min-width: 44px;
+  height: 48px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 24px;
+  line-height: 1;
+}
+.week-grid__cell--empty {
+  color: #c48a00;
+  box-shadow: inset 0 0 0 2px rgba(255, 184, 0, 0.55);
+}
+.week-grid__cell--missed {
+  opacity: 0.45;
+}
+.week-grid__cell--pending {
+  font-size: 20px;
+  background: rgba(255, 184, 0, 0.12);
+}
+.week-grid__cell--done {
+  color: #ffb800;
+  background: rgba(255, 184, 0, 0.16);
+}
+.week-grid__cell--paid,
+.week-grid__paid-sample {
+  color: var(--ink-2);
+  text-decoration: line-through;
+  text-decoration-thickness: 3px;
+  opacity: 0.6;
+}
+.week-grid__cell--future,
+.week-grid__cell--na {
+  background: transparent;
+  opacity: 0.4;
+}
+.week-grid__table tfoot td,
+.week-grid__table tfoot th {
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.week-grid__legend {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-2);
+  text-align: center;
+}
+.week-grid__menu {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 8px;
+}
+.week-grid__action {
+  min-height: 56px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--canvas);
+  color: var(--ink);
+  font: inherit;
+  font-size: 18px;
+  font-weight: 700;
+}
+.week-grid__action--go {
+  background: #34c759;
+  color: #fff;
+}
+.week-grid__action--pay {
+  background: #ffb800;
+  color: #1d1d1f;
+}
+.week-grid__action:disabled {
+  opacity: 0.4;
+}
+/* Bigger on the wall tablet */
+.week-grid--board .week-grid__cell {
+  height: 72px;
+  font-size: 34px;
+  border-radius: 16px;
+}
+.week-grid--board .week-grid__task {
+  font-size: 22px;
+  min-width: 220px;
+}
+.week-grid--board .week-grid__table thead th {
+  font-size: 19px;
+}
+.weekday-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.week-grid-group {
+  margin-top: 12px;
+  padding: 12px 8px;
+}

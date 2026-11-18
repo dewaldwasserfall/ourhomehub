@@ -28,6 +28,7 @@ import { BoardExpanded } from "@/components/board/board-expanded";
 import { useBoardAdmin } from "@/components/board/board-admin";
 import { CelebrationLayer } from "@/components/celebration";
 import { DishwasherCard } from "@/components/dishwasher-card";
+import { WeekGrid } from "@/components/week-grid";
 import { Sheet } from "@/components/sheet";
 import { useToast } from "@/components/toast";
 import { binColour, binLabel, binList, binsAround } from "@/lib/bins";
@@ -41,7 +42,7 @@ import { useCalendar } from "@/lib/calendar/use-calendar";
 import { friendlyError } from "@/lib/errors";
 import { MODE_LABELS } from "@/lib/plan";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import type { DayInfo } from "@/lib/types";
+import type { DayInfo, Member } from "@/lib/types";
 import { usePlanData } from "@/lib/use-plan-data";
 import { progressShort, rewardStatus } from "@/lib/rewards";
 import { useRewards } from "@/lib/use-rewards";
@@ -56,7 +57,7 @@ function boardError(message: string): string {
 
 export default function BoardTodayPage() {
   const supabase = getSupabaseBrowserClient();
-  const { household, members, memberById, me } = useHousehold();
+  const { household, members, memberById, me, updateMember } = useHousehold();
   const tz = household.timezone;
   const toast = useToast();
   const { admin, adminError } = useBoardAdmin();
@@ -198,6 +199,21 @@ export default function BoardTodayPage() {
       : iso === addDays(today, 1)
         ? "Tomorrow"
         : new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${iso}T12:00:00Z`));
+  // 4b-2. Opening a child's column: fetch their board view first, so a
+  //        change a parent made on their phone shows without a reload.
+  useEffect(() => {
+    if (!expanded?.startsWith("col:") || expanded === "col:anyone") return;
+    const id = expanded.slice(4);
+    void supabase
+      .from("members")
+      .select("board_style, board_days, board_plan_id")
+      .eq("id", id)
+      .maybeSingle<Pick<Member, "board_style" | "board_days" | "board_plan_id">>()
+      .then(({ data }) => {
+        if (data) updateMember(id, data);
+      });
+  }, [expanded, supabase, updateMember]);
+
   /** Props that make a tile tappable (and keyboard-friendly). */
   const tile = (which: Expanded) => ({
     role: "button" as const,
@@ -309,6 +325,30 @@ export default function BoardTodayPage() {
     );
 
     if (full) {
+      // A child set to the week grid: their reward's tasks by day instead
+      // of today's list (the reward cards stay on top).
+      const gridPlan = isKid && person.board_style === "week_grid" ? (kidPlans.find((p) => p.id === person.board_plan_id) ?? kidPlans[0]) : undefined;
+      if (isKid && gridPlan) {
+        return (
+          <>
+            {rewardCards}
+            <WeekGrid
+              child={person}
+              plan={gridPlan}
+              planTasks={rewards.tasksFor(gridPlan.id)}
+              steps={plan.steps}
+              chores={plan.chores}
+              zoneTasks={plan.zoneTasks}
+              days={person.board_days?.length ? person.board_days : [1, 2, 3, 4, 5]}
+              today={today}
+              surface="board"
+              admin={!!admin}
+              onMessage={(m) => toast.show(m)}
+              adminError={adminError}
+            />
+          </>
+        );
+      }
       return (
         <>
           {rewardCards}

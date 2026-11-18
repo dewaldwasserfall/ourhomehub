@@ -54,6 +54,14 @@ export interface Member {
   can_see_trips: boolean;
   /** Sets up reward plans and gives rewards (owner-controlled; adults only). */
   is_parent?: boolean;
+  /**
+   * Children: how their column opens on the board. "list", or "week_grid":
+   * a reward's tasks by day for board_days (ISO weekdays, 1 = Monday), rows
+   * from board_plan_id (null: their first active reward). Parents set it.
+   */
+  board_style?: "list" | "week_grid";
+  board_days?: number[];
+  board_plan_id?: string | null;
   /** Sees and controls SmartThings devices (owner-controlled; adults only). */
   can_manage_home?: boolean;
   created_at: string;

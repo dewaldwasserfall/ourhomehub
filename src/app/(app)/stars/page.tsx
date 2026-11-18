@@ -22,6 +22,7 @@ import { Sheet } from "@/components/sheet";
 import { CelebrationLayer } from "@/components/celebration";
 import { StarCard } from "@/components/star-card";
 import { useToast } from "@/components/toast";
+import { WeekGrid } from "@/components/week-grid";
 import { addDays, dateKey } from "@/lib/calendar/time";
 import { friendlyError } from "@/lib/errors";
 import { PERIOD_LABELS, historyLines, linkedTaskDone, type RewardHistoryEntry, progressText, rewardStatus, type RewardPeriod, type RewardPlan, type RewardPlanTask } from "@/lib/rewards";
@@ -56,7 +57,7 @@ const taskKey = (kind: string, id: string) => `${kind}:${id}`;
 
 export default function StarsPage() {
   const supabase = getSupabaseBrowserClient();
-  const { household, members, me, memberById } = useHousehold();
+  const { household, members, me, memberById, updateMember } = useHousehold();
   const toast = useToast();
   const parent = isParent(me);
   const today = dateKey(new Date(), household.timezone);
@@ -83,6 +84,42 @@ export default function StarsPage() {
     void loadHistory();
   }, [loadHistory, rewards.progress]);
   const givenDay = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: household.timezone });
+
+  // Step 1c: a child's board view (parents): List, or Week grid with its
+  //          days and which reward's tasks make the rows.
+  const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const [view, setView] = useState<{ memberId: string; style: "list" | "week_grid"; days: number[]; planId: string | null } | null>(null);
+  const openView = (memberId: string) => {
+    const m = memberById(memberId);
+    setView({
+      memberId,
+      style: m?.board_style ?? "list",
+      days: m?.board_days?.length ? m.board_days : [1, 2, 3, 4, 5],
+      planId: m?.board_plan_id ?? null,
+    });
+  };
+  const viewSummary = (memberId: string) => {
+    const m = memberById(memberId);
+    if (m?.board_style !== "week_grid") return "List of today's tasks";
+    const days = m.board_days?.length ? m.board_days : [1, 2, 3, 4, 5];
+    const range =
+      days.join(",") === "1,2,3,4,5" ? "Mon–Fri" : days.join(",") === "1,2,3,4,5,6,7" ? "Every day" : days.map((d) => DAY_NAMES[d - 1]).join(", ");
+    const planTitle = rewards.plans.find((p) => p.id === m.board_plan_id)?.title ?? rewards.plansFor(memberId)[0]?.title;
+    return `Week grid, ${range}${planTitle ? ` · ${planTitle}` : ""}`;
+  };
+  async function saveView() {
+    if (!view) return;
+    const { error } = await supabase.rpc("set_board_view", {
+      p_member_id: view.memberId,
+      p_style: view.style,
+      p_days: view.days,
+      p_plan_id: view.planId,
+    });
+    if (error) return void toast.show(friendlyError(error));
+    updateMember(view.memberId, { board_style: view.style, board_days: view.days, board_plan_id: view.planId });
+    setView(null);
+    toast.show("Board view saved");
+  }
 
   // Step 1: the tasks a child's plan can link to (theirs, or anyone's).
   const optionsFor = (memberId: string): TaskOption[] => {
@@ -262,6 +299,44 @@ export default function StarsPage() {
             })}
             {kidPlans.length === 0 && parent && (
               <p className="section__footer">No rewards yet. Add one: daily, weekly, or a savings goal.</p>
+            )}
+
+            {/* Step 4b: the week grid (children set to it): parents confirm,
+                fill in and pay out stars here; the child sees it read-only. */}
+            {kid.board_style === "week_grid" &&
+              (() => {
+                const gridPlan = kidPlans.find((p) => p.id === kid.board_plan_id) ?? kidPlans[0];
+                if (!gridPlan) return null;
+                return (
+                  <div className="group week-grid-group">
+                    <WeekGrid
+                      child={kid}
+                      plan={gridPlan}
+                      planTasks={rewards.tasksFor(gridPlan.id)}
+                      steps={plan.steps}
+                      chores={plan.chores}
+                      zoneTasks={plan.zoneTasks}
+                      days={kid.board_days?.length ? kid.board_days : [1, 2, 3, 4, 5]}
+                      today={today}
+                      surface="phone"
+                      admin={parent}
+                      onMessage={(m) => toast.show(m)}
+                    />
+                  </div>
+                );
+              })()}
+
+            {/* Step 4c: how this child's column opens on the board (parents) */}
+            {parent && (
+              <div className="group">
+                <button type="button" className="row row--pressable" onClick={() => openView(kid.id)}>
+                  <span className="row__body">
+                    <span className="row__title">Board view</span>
+                    <span className="row__subtitle">{viewSummary(kid.id)}</span>
+                  </span>
+                  <span className="row__trailing row__subtitle">Change</span>
+                </button>
+              </div>
             )}
 
             {/* Step 5: rewards given, newest first; tap one for what earned it */}
@@ -466,6 +541,80 @@ export default function StarsPage() {
       </Sheet>
       {/* The child's own phone celebrates an earned reward (once per period) */}
       {me.role === "child" && <CelebrationLayer plans={rewards.plans} progress={rewards.progress} />}
+      {/* A child's board view */}
+      <Sheet
+        open={!!view}
+        onClose={() => setView(null)}
+        title={view ? `Board view for ${memberById(view.memberId)?.display_name.split(" ")[0] ?? ""}` : ""}
+        leading={
+          <button type="button" className="nav-button" onClick={() => setView(null)}>
+            Cancel
+          </button>
+        }
+        trailing={
+          <button type="button" className="nav-button nav-button--strong" onClick={saveView} disabled={!view || view.days.length === 0}>
+            Save
+          </button>
+        }
+      >
+        {view && (
+          <div className="sheet__stack">
+            <Segmented
+              label="When their column is tapped on the board"
+              value={view.style}
+              onChange={(style) => setView({ ...view, style })}
+              options={[
+                { value: "list", label: "List" },
+                { value: "week_grid", label: "Week grid" },
+              ]}
+            />
+            {view.style === "week_grid" && (
+              <>
+                <div className="section__header" style={{ padding: "0 4px" }}>
+                  <span className="section__header-title">Days</span>
+                </div>
+                <div className="weekday-picker">
+                  {DAY_NAMES.map((name, i) => {
+                    const d = i + 1;
+                    const on = view.days.includes(d);
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        className={`chip-button ${on ? "chip-button--strong" : ""}`}
+                        aria-pressed={on}
+                        onClick={() => setView({ ...view, days: on ? view.days.filter((x) => x !== d) : [...view.days, d].sort((a, b) => a - b) })}
+                      >
+                        {name}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="section__header" style={{ padding: "0 4px" }}>
+                  <span className="section__header-title">Rows: the tasks of</span>
+                </div>
+                <div className="group">
+                  {rewards.plansFor(view.memberId).length === 0 && <div className="row row__subtitle">Add a reward with linked tasks first.</div>}
+                  {rewards.plansFor(view.memberId).map((p, i) => {
+                    const on = view.planId === p.id || (view.planId === null && i === 0);
+                    return (
+                      <button key={p.id} type="button" className="row row--pressable" aria-pressed={on} onClick={() => setView({ ...view, planId: p.id })}>
+                        <span className={`reward-plan__check ${on ? "reward-plan__check--done" : ""}`} aria-hidden="true">
+                          {on && <CheckIcon size={12} strokeWidth={3} />}
+                        </span>
+                        <span className="row__body">{p.title}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="section__footer" style={{ padding: 0 }}>
+                  Rewards that count only their own tasks work best: the grid shows those tasks.
+                </p>
+              </>
+            )}
+          </div>
+        )}
+      </Sheet>
       {toast.node}
     </main>
   );

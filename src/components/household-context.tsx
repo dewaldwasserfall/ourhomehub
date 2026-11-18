@@ -23,6 +23,8 @@ interface HouseholdContextValue {
   setHousehold: (household: Household) => void;
   /** Update the signed-in member locally (e.g. after a theme change). */
   updateMe: (patch: Partial<Member>) => void;
+  /** Update another member locally (e.g. after a parent changes a child's board view). */
+  updateMember: (memberId: string, patch: Partial<Member>) => void;
 }
 
 const HouseholdContext = createContext<HouseholdContextValue | null>(null);
@@ -59,6 +61,15 @@ export function HouseholdProvider({
     setMembers((list) => list.map((m) => (m.id === initialMe.id ? { ...m, ...patch } : m)));
   }, [initialMe.id]);
 
+  // Step 2b: the same for another member.
+  const updateMember = useCallback(
+    (memberId: string, patch: Partial<Member>) => {
+      setMembers((list) => list.map((m) => (m.id === memberId ? { ...m, ...patch } : m)));
+      if (memberId === initialMe.id) setMe((current) => ({ ...current, ...patch }));
+    },
+    [initialMe.id],
+  );
+
   const value = useMemo<HouseholdContextValue>(() => {
     const byUser = new Map(members.map((m) => [m.user_id, m]));
     const byId = new Map(members.map((m) => [m.id, m]));
@@ -71,8 +82,9 @@ export function HouseholdProvider({
       memberById: (memberId) => (memberId ? byId.get(memberId) : undefined),
       setHousehold,
       updateMe,
+      updateMember,
     };
-  }, [me, household, members, updateMe]);
+  }, [me, household, members, updateMe, updateMember]);
 
   return <HouseholdContext.Provider value={value}>{children}</HouseholdContext.Provider>;
 }
