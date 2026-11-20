@@ -3,7 +3,7 @@
  * looks like, and what a tap does.
  */
 import { describe, expect, it } from "vitest";
-import { boardColumns, boardTapAction, tickState, type BoardTodo } from "@/lib/board";
+import { boardColumns, currentZone, splitZoneItems, boardTapAction, tickState, type BoardTodo } from "@/lib/board";
 import type { Chore, Completion, Member, Routine, RoutineStep } from "@/lib/types";
 
 const today = "2026-11-16"; // a Monday
@@ -111,5 +111,29 @@ describe("board taps", () => {
     expect(tickState({ pending: true })).toBe("pending");
     expect(tickState({ pending: false })).toBe("done");
     expect(tickState({ pending: false, status: "open" })).toBe("open");
+  });
+});
+
+describe("zones column", () => {
+  it("finds this fortnight's zone with its dates and progress, and splits zone tasks from the rest", () => {
+    const plan = {
+      zones: [
+        { id: "z1", household_id: "h", name: "Kitchen", sort_order: 0, created_at: "" },
+        { id: "z2", household_id: "h", name: "Bathroom", sort_order: 1, created_at: "" },
+      ],
+      zoneTasks: [
+        { id: "t1", zone_id: "z2", household_id: "h", title: "Shower door", assigned_to: null, sort_order: 0 },
+        { id: "t2", zone_id: "z2", household_id: "h", title: "Mirror", assigned_to: null, sort_order: 1 },
+      ],
+      completions: [{ kind: "zone_task", item_id: "t1", for_date: "2026-11-16", pending: false }],
+    } as unknown as Parameters<typeof currentZone>[0];
+    // Rotation began 2 Nov: 2–15 Nov is Kitchen, 16–29 Nov is Bathroom.
+    expect(currentZone(plan, "2026-11-02", "2026-11-20")).toMatchObject({ zone: { name: "Bathroom" }, start: "2026-11-16", end: "2026-11-29", done: 1, total: 2 });
+    expect(currentZone(plan, null, "2026-11-20")).toBeNull();
+
+    const items = [{ kind: "zone_task", title: "Mirror" }, { kind: "chore", title: "Feed fish" }] as unknown as Parameters<typeof splitZoneItems>[0];
+    const split = splitZoneItems(items);
+    expect(split.zone.map((i) => i.title)).toEqual(["Mirror"]);
+    expect(split.other.map((i) => i.title)).toEqual(["Feed fish"]);
   });
 });

@@ -4216,3 +4216,45 @@ td.week-grid__today {
 .wallet__delta--out {
   color: var(--ink-2);
 }
+
+/* Board: the Zones column (this fortnight's zone, then Anyone) */
+.board-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.board-zone--other {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--separator);
+}
+.board-zone__head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 2px 10px;
+  margin: -6px;
+  padding: 8px 6px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.board-zone__head:active {
+  background: var(--fill);
+}
+.board-zone__head:focus-visible {
+  outline: 3px solid var(--accent);
+}
+.board-zone__name {
+  font-size: 19px;
+  font-weight: 800;
+}
+.board-zone__count {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.board-zone__until {
+  grid-column: 1 / -1;
+  font-size: 14px;
+  color: var(--ink-2);
+}

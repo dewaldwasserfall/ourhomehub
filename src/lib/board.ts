@@ -216,3 +216,41 @@ export function boardTapAction(item: Pick<BoardItem, "state" | "assignee" | "boa
   if (item.state === "open") return item.assignee ? { type: "tick", memberId: item.assignee } : { type: "ask_who" };
   return item.boardCanUndo ? { type: "undo" } : { type: "ask_grown_up" };
 }
+
+// -----------------------------------------------------------------------------
+// Step 3: the Zones column (what used to be "Anyone")
+// -----------------------------------------------------------------------------
+
+/** This fortnight's zone, its dates, and how many of its tasks are done. */
+export interface CurrentZone {
+  zone: PlanData["zones"][number];
+  start: string;
+  end: string;
+  done: number;
+  total: number;
+}
+
+/**
+ * Step 3a: the zone for this fortnight (zones take turns, two weeks each),
+ * or null when there are no zones or no rotation start date.
+ */
+export function currentZone(
+  plan: Pick<PlanData, "zones" | "zoneTasks" | "completions">,
+  zoneRotationStart: string | null,
+  today: string,
+): CurrentZone | null {
+  if (!zoneRotationStart) return null;
+  const fortnight = zoneFortnight(zoneRotationStart, today, plan.zones.length);
+  const zone = fortnight ? plan.zones[fortnight.index] : undefined;
+  if (!zone || !fortnight) return null;
+  const tasks = plan.zoneTasks.filter((t) => t.zone_id === zone.id);
+  const done = tasks.filter((t) =>
+    plan.completions.some((c) => c.kind === "zone_task" && c.item_id === t.id && c.for_date === fortnight.start && !c.pending),
+  ).length;
+  return { zone, start: fortnight.start, end: fortnight.end, done, total: tasks.length };
+}
+
+/** Step 3b: the Anyone column's items: the zone's tasks, and everything else. */
+export function splitZoneItems(items: BoardItem[]): { zone: BoardItem[]; other: BoardItem[] } {
+  return { zone: items.filter((i) => i.kind === "zone_task"), other: items.filter((i) => i.kind !== "zone_task") };
+}

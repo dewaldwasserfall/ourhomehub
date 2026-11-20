@@ -14,6 +14,10 @@
  * "+ To-do" appear on the left, and tapping a waiting tick opens Confirm /
  * Not done. See board-admin.tsx and board-add.tsx.
  *
+ * The last column is "Zones": this fortnight's zone and its tasks (tap the
+ * zone's name for full screen), then a short Anyone section for other
+ * unassigned chores and to-dos. Children's columns are as before.
+ *
  * Tiles: the left column's calendar, bins and groceries tiles open full
  * screen when tapped, with a large "← Home" to come back (and back by
  * themselves after 2 minutes idle). See board-expanded.tsx.
@@ -36,7 +40,7 @@ import { binColour, binLabel, binList, binsAround } from "@/lib/bins";
 import { groceryLabel, groceryPreview, grocerySections, upcomingBins, type GroceryEntry, type GroceryList } from "@/lib/board-tiles";
 import { oneMoreStar } from "@/lib/celebrate";
 import { unlockChime } from "@/lib/chime";
-import { boardColumns, boardTapAction, type BoardItem, type BoardTodo } from "@/lib/board";
+import { boardColumns, boardTapAction, currentZone, splitZoneItems, type BoardItem, type BoardTodo } from "@/lib/board";
 import { expandForRange, groupByDay } from "@/lib/calendar/expand";
 import { addDays, dateKey, timeKey, wallTimeOf } from "@/lib/calendar/time";
 import { useCalendar } from "@/lib/calendar/use-calendar";
@@ -176,6 +180,13 @@ export default function BoardTodayPage() {
       }),
     [plan, todos, members, today, dayInfo?.mode, household.zone_rotation_start],
   );
+  // 2b. This fortnight's zone (the Zones column), its dates and progress.
+  const zoneNow = useMemo(() => currentZone(plan, household.zone_rotation_start, today), [plan, household.zone_rotation_start, today]);
+  // The Zones column stays even when the zone is all done (it says so).
+  const boardCols = useMemo(
+    () => (zoneNow && !columns.some((c) => c.memberId === null) ? [...columns, { memberId: null, items: [], doneCount: 0 }] : columns),
+    [columns, zoneNow],
+  );
 
   // Step 4: the calendar strip: today's events, tomorrow's first once they're over.
   const events = useMemo(() => {
@@ -188,7 +199,7 @@ export default function BoardTodayPage() {
   const bins = binsAround(plan.binDays, today);
 
   // 4b. The tiles' full-screen views: the week ahead, the next bins, all groceries.
-  type Expanded = "calendar" | "bins" | "groceries" | `col:${string}`;
+  type Expanded = "calendar" | "bins" | "groceries" | `col:${string}` | `zone:${string}`;
   const [expanded, setExpanded] = useState<Expanded | null>(null);
   const shopping = useMemo(() => grocerySections(groceries.lists, groceries.entries), [groceries]);
   const week = useMemo(() => {
@@ -239,14 +250,21 @@ export default function BoardTodayPage() {
     const person = memberById(col.memberId);
     const isKid = person?.role === "child";
     const star = isKid ? stars.stats[person.id] : undefined;
-    const name = person ? person.display_name.split(" ")[0] : "Anyone";
+    // The unassigned column is "Zones" when there's a zone this fortnight.
+    const name = person ? person.display_name.split(" ")[0] : zoneNow ? "Zones" : "Anyone";
     // A child's rewards come first: that's what the board is for.
     const kidPlans = isKid ? rewards.plansFor(person.id) : [];
 
     // Step 1: name, stars and streak (and the "+1 ★" pop).
     const header = (
       <header className="board-col__head">
-        {person ? <Avatar member={person} /> : <span className="board-col__anyone" aria-hidden="true">?</span>}
+        {person ? (
+          <Avatar member={person} />
+        ) : (
+          <span className="board-col__anyone" aria-hidden="true">
+            {zoneNow ? "🧹" : "?"}
+          </span>
+        )}
         <span className="board-col__name">{name}</span>
         {/* The streak only: stars belong to each reward (below), so a
             lifetime total here would count ticks that don't count. */}
@@ -306,17 +324,9 @@ export default function BoardTodayPage() {
     );
 
     // Step 3: the tasks (tap to tick, exactly as on the board).
-    const tasks = (
-      <>
-        {col.items.length > 0 ? (
-          <div className="board-col__progress" aria-label={`${col.doneCount} of ${col.items.length} done`}>
-            <span style={{ width: `${(col.doneCount / col.items.length) * 100}%` }} />
-          </div>
-        ) : (
-          <p className="board-muted board-col__empty">Nothing to do today.</p>
-        )}
+    const itemList = (list: BoardItem[]) => (
         <ul className="board-list">
-          {col.items.map((item) => (
+          {list.map((item) => (
             <li key={item.key}>
               <button
                 type="button"
@@ -340,8 +350,49 @@ export default function BoardTodayPage() {
             </li>
           ))}
         </ul>
+    );
+    const progressBar = (done: number, total: number) =>
+      total > 0 ? (
+        <div className="board-col__progress" aria-label={`${done} of ${total} done`}>
+          <span style={{ width: `${(done / total) * 100}%` }} />
+        </div>
+      ) : null;
+    let tasks = (
+      <>
+        {col.items.length > 0 ? progressBar(col.doneCount, col.items.length) : <p className="board-muted board-col__empty">Nothing to do today.</p>}
+        {itemList(col.items)}
       </>
     );
+
+    // Step 3b: the Zones column: this fortnight's zone first (its name opens
+    //          it full screen), then the other unassigned jobs under Anyone.
+    if (!person && zoneNow) {
+      const split = splitZoneItems(col.items);
+      const until = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(
+        new Date(`${zoneNow.end}T12:00:00Z`),
+      );
+      tasks = (
+        <>
+          <div className="board-zone">
+            <div className="board-zone__head" {...tile(`zone:${zoneNow.zone.id}`)} aria-label={`${zoneNow.zone.name}: show full screen`}>
+              <span className="board-zone__name">🧹 {zoneNow.zone.name}</span>
+              <span className="board-zone__count">
+                {zoneNow.done}/{zoneNow.total}
+              </span>
+              <span className="board-zone__until">This fortnight, until {until}</span>
+            </div>
+            {progressBar(zoneNow.done, zoneNow.total)}
+            {split.zone.length > 0 ? itemList(split.zone) : <p className="board-muted board-col__empty">All done for this fortnight 🎉</p>}
+          </div>
+          {split.other.length > 0 && (
+            <div className="board-zone board-zone--other">
+              <span className="board-zone__name">Anyone</span>
+              {itemList(split.other)}
+            </div>
+          )}
+        </>
+      );
+    }
 
     if (full) {
       // A child set to the week grid: their reward's tasks by day instead
@@ -541,7 +592,7 @@ export default function BoardTodayPage() {
             <p className="board-muted">Nothing to do today.</p>
           </div>
         )}
-        {columns.map((col) => (
+        {boardCols.map((col) => (
           <div key={col.memberId ?? "anyone"} className={`board-col ${memberById(col.memberId)?.role === "child" ? "board-col--kid" : ""}`}>
             {columnBody(col, false)}
           </div>
@@ -646,6 +697,51 @@ export default function BoardTodayPage() {
               onBack={() => setExpanded(null)}
             >
               <div className={`board-col board-col--full ${person?.role === "child" ? "board-col--kid" : ""}`}>{columnBody(col, true)}</div>
+            </BoardExpanded>
+          );
+        })()}
+      {expanded?.startsWith("zone:") &&
+        zoneNow &&
+        (() => {
+          // The zone full screen: its tasks, large (tap to tick as usual).
+          const anyone = columns.find((c) => c.memberId === null);
+          const zoneItems = anyone ? splitZoneItems(anyone.items).zone : [];
+          const fmtDay = (iso: string) =>
+            new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${iso}T12:00:00Z`));
+          return (
+            <BoardExpanded
+              title={`🧹 ${zoneNow.zone.name}`}
+              subtitle={`This fortnight: ${fmtDay(zoneNow.start)} – ${fmtDay(zoneNow.end)} · ${zoneNow.done} of ${zoneNow.total} done`}
+              onBack={() => setExpanded(null)}
+            >
+              <div className="board-col board-col--full">
+                {zoneItems.length > 0 ? (
+                  <ul className="board-list">
+                    {zoneItems.map((item) => (
+                      <li key={item.key}>
+                        <button
+                          type="button"
+                          className={`board-item board-item--${item.state}`}
+                          onClick={() => tap(item)}
+                          disabled={busy === item.key}
+                          aria-pressed={item.state !== "open"}
+                        >
+                          <span className="board-item__check" aria-hidden="true">
+                            {item.state === "done" ? "✓" : item.state === "pending" ? "…" : ""}
+                          </span>
+                          <span className="board-item__text">
+                            <span className="board-item__title">{item.title}</span>
+                            {item.state === "pending" && <span className="board-item__note">{admin ? "Tap to confirm" : "Waiting for a grown-up"}</span>}
+                            {item.doneFor && <span className="board-item__note">Done by {memberById(item.doneFor)?.display_name.split(" ")[0]}</span>}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="board-muted">All done for this fortnight 🎉</p>
+                )}
+              </div>
             </BoardExpanded>
           );
         })()}
