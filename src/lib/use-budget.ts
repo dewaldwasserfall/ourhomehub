@@ -21,6 +21,9 @@ export interface BunqConnection {
   status: "active" | "error";
   last_error: string | null;
   last_synced_at: string | null;
+  /** Money that only passes through: payers and where it's moved on to (shop keys). */
+  passthrough_from?: string[];
+  passthrough_to?: string[];
 }
 
 export function useBudget(householdId: string, timeZone: string, enabled: boolean) {
@@ -73,8 +76,15 @@ export function useBudget(householdId: string, timeZone: string, enabled: boolea
     [connection, payments, today, dayOf],
   );
   const merchants = useMemo(() => (summary ? byMerchant(payments, summary.period, dayOf) : []), [payments, summary, dayOf]);
+  // This month's payments, without money that only passed through (a
+  // toeslag moved straight on to savings: not grocery money).
   const periodPayments = useMemo(
-    () => (summary ? payments.filter((p) => dayOf(p.created_at) >= summary.period.start && dayOf(p.created_at) <= summary.period.end) : []),
+    () =>
+      summary
+        ? payments.filter(
+            (p) => p.kind !== "passthrough" && dayOf(p.created_at) >= summary.period.start && dayOf(p.created_at) <= summary.period.end,
+          )
+        : [],
     [payments, summary, dayOf],
   );
 

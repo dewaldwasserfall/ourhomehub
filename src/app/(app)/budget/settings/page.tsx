@@ -43,6 +43,9 @@ function Settings() {
 
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [startDay, setStartDay] = useState(26);
+  // Money passed straight through (e.g. toeslagen moved on to savings).
+  const [passFrom, setPassFrom] = useState("");
+  const [passTo, setPassTo] = useState("");
   const [access, setAccess] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(members.map((m) => [m.id, m.role === "owner" || m.can_see_finances])),
   );
@@ -58,6 +61,9 @@ function Settings() {
   useEffect(() => {
     if (!connection) return;
     setStartDay(connection.period_start_day);
+    const names = (keys?: string[]) => (keys ?? []).map((k) => k[0].toUpperCase() + k.slice(1)).join(", ");
+    setPassFrom(names(connection.passthrough_from));
+    setPassTo(names(connection.passthrough_to));
   }, [connection]);
 
   // Step 2: the accounts to choose from (asks bunq).
@@ -188,6 +194,43 @@ function Settings() {
             </label>
           </div>
           <p className="section__footer">The month runs until the day before. What&rsquo;s left is always the account&rsquo;s balance; when it&rsquo;s empty, the budget is finished.</p>
+        </section>
+      )}
+
+      {/* Step 4b: money that only passes through (owner) */}
+      {connection && (
+        <section className="section">
+          <div className="section__header">
+            <span className="section__header-title">Passed straight through</span>
+          </div>
+          <form
+            className="group"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const list = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
+              void save({ passthroughFrom: list(passFrom), passthroughTo: list(passTo) }, "Saved. Payments updated.");
+            }}
+          >
+            <label className="form-row">
+              <span className="form-row__label">Money from</span>
+              <input className="pill-input" style={{ width: 180 }} placeholder="Belastingdienst" value={passFrom} onChange={(e) => setPassFrom(e.target.value)} />
+            </label>
+            <label className="form-row">
+              <span className="form-row__label">Moved on to</span>
+              <input className="pill-input" style={{ width: 180 }} placeholder="Dewald" value={passTo} onChange={(e) => setPassTo(e.target.value)} />
+            </label>
+            <div className="form-row">
+              <span className="form-row__label" />
+              <button type="submit" className="chip-button chip-button--strong">
+                Save
+              </button>
+            </div>
+          </form>
+          <p className="section__footer">
+            Money in from these payers, and a transfer of about the same amount to these accounts within a week, isn&rsquo;t grocery money: it
+            doesn&rsquo;t count as money added or spent, and doesn&rsquo;t show in the overview. Other transfers to them still count. Separate names
+            with commas.
+          </p>
         </section>
       )}
 

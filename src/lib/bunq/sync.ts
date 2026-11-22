@@ -5,7 +5,7 @@
  * Runs from the 5-minute job at most once an hour per household, and when
  * someone taps "Update now". Keeps this budget month and the two before it.
  */
-import { budgetPeriod, classifyPayment, shopKey } from "../budget";
+import { budgetPeriod, classifyPayment, passThroughIds, shopKey } from "../budget";
 import { dateKey } from "../calendar/time";
 import { getSupabaseAdminClient } from "../supabase/admin";
 import { BunqError, listAccounts, listPayments, openSession, type BunqCredentials, type BunqSession } from "./api";
@@ -15,6 +15,8 @@ interface ConnectionRow {
   account_id: number | null;
   period_start_day: number;
   last_synced_at: string | null;
+  passthrough_from: string[] | null;
+  passthrough_to: string[] | null;
 }
 
 /** Step 1: credentials from Vault, and a session. */
@@ -30,7 +32,7 @@ export async function syncBudget(householdId: string): Promise<number> {
   const [{ data: conn }, { data: household }] = await Promise.all([
     admin
       .from("bunq_connections")
-      .select("household_id, account_id, period_start_day, last_synced_at")
+      .select("household_id, account_id, period_start_day, last_synced_at, passthrough_from, passthrough_to")
       .eq("household_id", householdId)
       .single<ConnectionRow>(),
     admin.from("households").select("timezone").eq("id", householdId).single<{ timezone: string }>(),
@@ -52,6 +54,13 @@ export async function syncBudget(householdId: string): Promise<number> {
     //     whole window, so a change to the rules fixes older rows too.
     //     Money in is a refund only from somewhere this account has paid.
     const paidTo = new Set(payments.filter((p) => p.amountCents < 0).map((p) => shopKey(p.counterparty)).filter(Boolean));
+    //     Money passed straight through (a toeslag moved on to savings)
+    //     is neither: see passThroughIds.
+    const passed = passThroughIds(
+      payments.map((p) => ({ id: p.id, created_at: p.createdAt, amount_cents: p.amountCents, counterparty: p.counterparty })),
+      conn.passthrough_from ?? [],
+      conn.passthrough_to ?? [],
+    );
     const rows = payments.map((p) => ({
       id: p.id,
       household_id: householdId,
@@ -59,7 +68,7 @@ export async function syncBudget(householdId: string): Promise<number> {
       amount_cents: p.amountCents,
       counterparty: p.counterparty,
       description: p.description,
-      kind: classifyPayment(p.amountCents, p.counterparty, paidTo),
+      kind: passed.has(p.id) ? ("passthrough" as const) : classifyPayment(p.amountCents, p.counterparty, paidTo),
     }));
     for (let i = 0; i < rows.length; i += 500) {
       const { error } = await admin.from("bunq_payments").upsert(rows.slice(i, i + 500));

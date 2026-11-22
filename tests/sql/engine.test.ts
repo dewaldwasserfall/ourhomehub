@@ -170,6 +170,7 @@ beforeAll(async () => {
     "20261117000100_reward_history.sql",
     "20261118000100_week_grid.sql",
     "20261118000200_wallets.sql",
+    "20261122000100_budget_passthrough.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {

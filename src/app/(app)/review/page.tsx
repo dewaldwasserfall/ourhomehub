@@ -113,7 +113,7 @@ export default function ReviewPage() {
         if (!data) return;
         // Spending is negative; refunds are positive and reduce it. Top-ups don't count.
         const rows = data as Array<Pick<BudgetPayment, "amount_cents" | "kind">>;
-        setWeekSpent(rows.filter((p) => p.kind !== "topup").reduce((sum, p) => sum - p.amount_cents, 0));
+        setWeekSpent(rows.filter((p) => p.kind !== "topup" && p.kind !== "passthrough").reduce((sum, p) => sum - p.amount_cents, 0));
       });
   }, [supabase, financeOk, budget.connection?.account_id, weeks.from, tz]);
 

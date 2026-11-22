@@ -3,7 +3,7 @@
  * classification, pace, projection and spending per shop.
  */
 import { describe, expect, it } from "vitest";
-import { budgetPeriod, byMerchant, classifyPayment, euros, merchantName, shopKey, summarise, type BudgetPayment } from "@/lib/budget";
+import { budgetPeriod, byMerchant, classifyPayment, euros, merchantName, passThroughIds, shopKey, summarise, type BudgetPayment } from "@/lib/budget";
 
 const dayOf = (iso: string) => iso.slice(0, 10);
 const pay = (id: number, date: string, cents: number, who: string, kind: BudgetPayment["kind"]): BudgetPayment => ({
@@ -99,5 +99,42 @@ describe("formatting", () => {
     expect(merchantName("Lidl Nederland GmbH")).toBe("Lidl Nederland");
     expect(euros(100000)).toBe("€1,000");
     expect(euros(1234)).toBe("€12.34");
+  });
+});
+
+describe("passThroughIds (toeslagen moved straight on to savings)", () => {
+  const p = (id: number, at: string, cents: number, counterparty: string) => ({ id, created_at: at, amount_cents: cents, counterparty });
+  const payments = [
+    p(1, "2026-10-15T08:57:00Z", 28100, "Belastingdienst"),
+    p(2, "2026-10-15T09:12:00Z", -28000, "Dewald"), // €1 less: still matched
+    p(3, "2026-11-16T09:27:00Z", 28100, "Belastingdienst"),
+    p(4, "2026-11-16T09:29:00Z", -28100, "Dewald"),
+    p(5, "2026-11-20T11:40:00Z", 9800, "Belastingdienst"),
+    p(6, "2026-11-20T20:10:00Z", -9800, "Dewald"),
+    p(7, "2026-11-10T12:00:00Z", -4500, "Dewald"), // no toeslag before it: a reimbursement, still spending
+    p(8, "2026-11-21T10:00:00Z", -9800, "Dewald"), // the €98 was already matched: spending
+    p(9, "2026-11-16T09:30:00Z", -6000, "Albert Heijn 1234"), // a shop: untouched
+  ];
+
+  it("passes on the toeslag and the matching transfer out, nothing else", () => {
+    expect([...passThroughIds(payments, ["belastingdienst"], ["dewald"])].sort()).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it("does nothing without a rule, and only matches within a week", () => {
+    expect(passThroughIds(payments, [], ["dewald"]).size).toBe(0);
+    const late = [p(1, "2026-11-01T08:00:00Z", 9800, "Belastingdienst"), p(2, "2026-11-12T08:00:00Z", -9800, "Dewald")];
+    expect([...passThroughIds(late, ["belastingdienst"], ["dewald"])]).toEqual([1]);
+  });
+
+  it("leaves passed-through money out of the month's spending", () => {
+    const base = { counterparty: "x", description: null };
+    const list: BudgetPayment[] = [
+      { ...base, id: 1, created_at: "2026-11-16T09:00:00Z", amount_cents: 28100, kind: "passthrough" },
+      { ...base, id: 2, created_at: "2026-11-16T09:10:00Z", amount_cents: -28100, kind: "passthrough" },
+      { ...base, id: 3, created_at: "2026-11-17T09:10:00Z", amount_cents: -5000, kind: "spend" },
+    ];
+    const s = summarise(list, "2026-11-20", 1, 10000, (iso) => iso.slice(0, 10));
+    expect(s.spentCents).toBe(5000);
+    expect(s.budgetCents).toBe(15000);
   });
 });

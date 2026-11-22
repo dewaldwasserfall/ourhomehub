@@ -19,7 +19,12 @@ export interface BudgetPayment {
   amount_cents: number;
   counterparty: string | null;
   description: string | null;
-  kind: "spend" | "refund" | "topup";
+  /**
+   * spend / refund / topup as before; passthrough: money that only passes
+   * through the account (a toeslag paid in and moved straight on to
+   * savings). Passed-on money counts as neither income nor spending.
+   */
+  kind: "spend" | "refund" | "topup" | "passthrough";
 }
 
 // -----------------------------------------------------------------------------
@@ -74,6 +79,59 @@ export function classifyPayment(amountCents: number, counterpartyName: string | 
   return key && paidTo.has(key) ? "refund" : "topup";
 }
 
+/**
+ * Step 2b: money passed straight through (bunq_connections.passthrough_from
+ * / passthrough_to, as shopKey()s).
+ *
+ *   * Money in from a "from" payer (e.g. Belastingdienst) is passed through.
+ *   * Money out to a "to" account (e.g. Dewald, moving it to savings) is
+ *     passed through only when it follows such money in: within 7 days,
+ *     for about the same amount (within €5). Each one in matches one out.
+ *     Any other transfer to that account stays spending (it might be a
+ *     reimbursement for groceries).
+ *
+ * Takes payments already classified (classifyPayment) and returns the ids
+ * that are passed through.
+ */
+export const PASSTHROUGH_DAYS = 7;
+export const PASSTHROUGH_TOLERANCE_CENTS = 500;
+
+export function passThroughIds(
+  payments: Array<{ id: number; created_at: string; amount_cents: number; counterparty: string | null }>,
+  from: string[],
+  to: string[],
+): Set<number> {
+  const ids = new Set<number>();
+  if (from.length === 0) return ids;
+  const fromKeys = new Set(from);
+  const toKeys = new Set(to);
+  const sorted = [...payments].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+  // 2b-1. Money in from a pass-through payer, oldest first; each can be
+  //       matched to one transfer out.
+  const open: Array<{ at: number; cents: number }> = [];
+  for (const p of sorted) {
+    const key = shopKey(p.counterparty);
+    if (p.amount_cents > 0 && fromKeys.has(key)) {
+      ids.add(p.id);
+      open.push({ at: Date.parse(p.created_at), cents: p.amount_cents });
+      continue;
+    }
+    // 2b-2. Money out to a pass-through account: matched to the oldest
+    //       unmatched money in from the last 7 days, about the same amount.
+    if (p.amount_cents < 0 && toKeys.has(key)) {
+      const at = Date.parse(p.created_at);
+      const i = open.findIndex(
+        (o) => at >= o.at && at - o.at <= PASSTHROUGH_DAYS * 86_400_000 && Math.abs(o.cents + p.amount_cents) <= PASSTHROUGH_TOLERANCE_CENTS,
+      );
+      if (i >= 0) {
+        ids.add(p.id);
+        open.splice(i, 1);
+      }
+    }
+  }
+  return ids;
+}
+
 // -----------------------------------------------------------------------------
 // Step 3: the month's figures
 // -----------------------------------------------------------------------------
@@ -109,11 +167,12 @@ export function summarise(
 ): BudgetSummary {
   const period = budgetPeriod(today, startDay);
 
-  // Step 3a: spending in this period, net of refunds (top-ups don't count).
+  // Step 3a: spending in this period, net of refunds (top-ups and money
+  //          passed straight through don't count).
   let spentCents = 0;
   for (const p of payments) {
     const day = timeZoneDay(p.created_at);
-    if (day < period.start || day > period.end || p.kind === "topup") continue;
+    if (day < period.start || day > period.end || p.kind === "topup" || p.kind === "passthrough") continue;
     spentCents -= p.amount_cents; // spend is negative, refunds positive
   }
   spentCents = Math.max(0, spentCents);
@@ -172,7 +231,7 @@ export function byMerchant(payments: BudgetPayment[], period: BudgetPeriod, time
   const totals = new Map<string, { name: string; cents: number; count: number }>();
   for (const p of payments) {
     const day = timeZoneDay(p.created_at);
-    if (day < period.start || day > period.end || p.kind === "topup") continue;
+    if (day < period.start || day > period.end || p.kind === "topup" || p.kind === "passthrough") continue;
     const name = merchantName(p.counterparty);
     const entry = totals.get(name) ?? { name, cents: 0, count: 0 };
     entry.cents -= p.amount_cents;
