@@ -292,6 +292,12 @@ export interface Trip {
   emergency: TripEmergency;
   created_by: string | null;
   created_at: string;
+  /**
+   * A secret trip (a surprise): only these members can see it; null for a
+   * normal trip. Everyone else's screens, calendar and notifications never
+   * see it (the database hides it). "Reveal trip" sets it back to null.
+   */
+  visible_to?: string[] | null;
 }
 
 export interface TripParticipant {

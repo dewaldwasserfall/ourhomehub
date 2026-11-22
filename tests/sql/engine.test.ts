@@ -171,6 +171,7 @@ beforeAll(async () => {
     "20261118000100_week_grid.sql",
     "20261118000200_wallets.sql",
     "20261122000100_budget_passthrough.sql",
+    "20261122000200_secret_trips.sql",
   ];
   await db.exec(SUPABASE_GRANTS);
   for (const file of files) {
@@ -1843,6 +1844,47 @@ describe("wallets", () => {
     await expect(db.query(`select public.wallet_change($1, 'minutes', 'adjust', 100, null)`, [kid])).rejects.toThrow(/adults_only/);
     await expect(db.query(`insert into public.wallet_entries (household_id, member_id, unit, amount, kind) values ($1, $2, 'minutes', 100, 'adjust')`, [householdId, kid])).rejects.toThrow();
     expect((await all(`select id from public.wallet_entries where member_id = $1`, [kid])).length).toBeGreaterThan(0);
+  });
+});
+
+describe("secret trips", () => {
+  it("hide a surprise trip and everything in it from everyone else, until it's revealed", async () => {
+    await actAs("dewald");
+    const memberOf = async (u: UserKey) => (await one<{ id: string }>(`select id from public.members where user_id = $1`, [USERS[u].id])).id;
+    const [me, partner] = [await memberOf("dewald"), await memberOf("partner")];
+    await db.query(`select public.set_trips_access($1, true)`, [partner]);
+
+    // Step 1: a secret trip, with the partner as a traveller and a stay.
+    //         Asking for an empty list still keeps the maker on it.
+    const trip = (
+      await one<{ id: string }>(
+        `insert into public.trips (household_id, name, start_date, end_date, visible_to) values ($1, 'Surprise Paris', '2031-02-14', '2031-02-16', '{}') returning id`,
+        [householdId],
+      )
+    ).id;
+    expect(await one(`select visible_to from public.trips where id = $1`, [trip])).toEqual({ visible_to: [me] });
+    await db.query(`insert into public.trip_participants (trip_id, member_id) values ($1, $2)`, [trip, partner]);
+    await db.query(`insert into public.trip_stays (trip_id, name, check_in, check_out) values ($1, 'Hotel', '2031-02-14', '2031-02-16')`, [trip]);
+    await db.query(`insert into public.trip_checklist (trip_id, title) values ($1, 'Her passport')`, [trip]).catch(() => undefined);
+
+    // Step 2: the partner (with Trips access) sees none of it, and can't touch it.
+    await actAs("partner");
+    expect(await all(`select id from public.trips where id = $1`, [trip])).toHaveLength(0);
+    expect(await all(`select trip_id from public.trip_participants where trip_id = $1`, [trip])).toHaveLength(0);
+    expect(await all(`select id from public.trip_stays where trip_id = $1`, [trip])).toHaveLength(0);
+    expect(await all(`select id from public.trip_checklist where trip_id = $1`, [trip])).toHaveLength(0);
+    await db.query(`update public.trips set visible_to = null where id = $1`, [trip]);
+    await expect(db.query(`insert into public.trip_plans (trip_id, day, title) values ($1, '2031-02-14', 'Peek')`, [trip])).rejects.toThrow();
+    // The board doesn't see it either.
+    await actAs("board");
+    expect(await all(`select id from public.trips where id = $1`, [trip])).toHaveLength(0);
+
+    // Step 3: still secret (her update changed nothing); the maker reveals it.
+    await actAs("dewald");
+    expect(await one(`select visible_to from public.trips where id = $1`, [trip])).toEqual({ visible_to: [me] });
+    await db.query(`update public.trips set visible_to = null where id = $1`, [trip]);
+    await actAs("partner");
+    expect(await all(`select id from public.trip_stays where trip_id = $1`, [trip])).toHaveLength(1);
   });
 });
 

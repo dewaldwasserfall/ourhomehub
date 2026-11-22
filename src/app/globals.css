@@ -4258,3 +4258,18 @@ td.week-grid__today {
   font-size: 14px;
   color: var(--ink-2);
 }
+
+/* Trips: a secret (surprise) trip */
+.trip-secret-badge {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #8e44ad 18%, transparent);
+  color: #8e44ad;
+  font-size: 12px;
+  font-weight: 700;
+  vertical-align: 2px;
+}
+.trip-secret {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, #8e44ad 45%, transparent);
+}

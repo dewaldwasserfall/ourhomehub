@@ -188,16 +188,23 @@ export async function runNotifications(now = new Date()) {
       const needCheckin = isTimeFor(nowMinutes, TRIP_CHECKIN_TIME) && wants((p, m) => p.trip_checkin && tripsAdult(m));
       const needIds = isTimeFor(nowMinutes, ID_EXPIRY_TIME) && wants((p, m) => p.id_expiry && tripsAdult(m));
       const tripNotices: Notice[] = [];
+      // Secret trips: a check-in reminder goes only to the people who can
+      // see the trip (notice key → who; absent = everyone with access).
+      const tripOnlyFor = new Map<string, string[]>();
       if (needCheckin) {
         const tomorrow = addDays(today, 1);
         const { data: stayRows } = await admin
           .from("trip_stays")
-          .select("id, trip_id, name, location, check_in, booking_ref, trip:trips!inner(id, name)")
+          .select("id, trip_id, name, location, check_in, booking_ref, trip:trips!inner(id, name, visible_to)")
           .eq("household_id", householdId)
           .eq("check_in", tomorrow);
-        for (const s of (stayRows ?? []) as unknown as Array<Parameters<typeof checkinReminder>[1][number] & { trip: { id: string; name: string } }>) {
+        for (const s of (stayRows ?? []) as unknown as Array<
+          Parameters<typeof checkinReminder>[1][number] & { trip: { id: string; name: string; visible_to: string[] | null } }
+        >) {
           const n = checkinReminder(s.trip, [s], today);
-          if (n) tripNotices.push(n);
+          if (!n) continue;
+          tripNotices.push(n);
+          if (s.trip.visible_to) tripOnlyFor.set(n.key, s.trip.visible_to);
         }
       }
       if (needIds) {
@@ -347,6 +354,7 @@ export async function runNotifications(now = new Date()) {
         if (review && prefs.weekly_review && member.role !== "child") notices.push(review);
         if (tripsAdult(member)) {
           for (const n of tripNotices) {
+            if (tripOnlyFor.has(n.key) && !tripOnlyFor.get(n.key)!.includes(member.id)) continue; // a secret trip
             const isCheckin = n.key.startsWith("checkin:");
             if ((isCheckin && prefs.trip_checkin) || (!isCheckin && prefs.id_expiry)) notices.push(n);
           }

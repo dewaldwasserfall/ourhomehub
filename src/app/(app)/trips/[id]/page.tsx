@@ -145,6 +145,17 @@ export default function TripPage() {
     router.replace("/trips");
   }
 
+  // Step 1c: secret trips. Revealing makes it a normal shared trip; making
+  //          an existing trip secret hides it from everyone but me.
+  const [confirmSecret, setConfirmSecret] = useState(false);
+  async function setSecret(on: boolean) {
+    if (!trip) return;
+    if (!confirmSecret) return setConfirmSecret(true);
+    setConfirmSecret(false);
+    const ok = await run(supabase.from("trips").update({ visible_to: on ? [me.id] : null }).eq("id", trip.id));
+    if (ok) toast.show(on ? "Secret: only you can see this trip now" : "Revealed: everyone with Trips access can see it");
+  }
+
   const saveEmergency = (value: TripEmergency) => run(supabase.from("trips").update({ emergency: value }).eq("id", id));
 
   const saveParticipant = (join: string | null, leave: string | null) =>
@@ -256,6 +267,29 @@ export default function TripPage() {
       {/* ------------------------------------------------------------- */}
       {/* Overview                                                      */}
       {/* ------------------------------------------------------------- */}
+      {/* A secret trip: say so, and the way to reveal it */}
+      {trip.visible_to && (
+        <section className="section">
+          <div className="group trip-secret">
+            <div className="row">
+              <span className="row__body">
+                <span className="row__title">🤫 Secret trip</span>
+                <span className="row__subtitle">
+                  Only you can see it. It isn&rsquo;t on anyone else&rsquo;s Trips, calendar, Today screen or notifications.
+                </span>
+              </span>
+            </div>
+            {canEdit && (
+              <button type="button" className="row row--pressable" onClick={() => void setSecret(false)}>
+                <span className="row__body row__title" style={{ color: "var(--accent)" }}>
+                  {confirmSecret ? "Tap again to reveal it to everyone" : "Reveal trip"}
+                </span>
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+
       {section === "overview" && (
         <>
           {/* When */}
@@ -414,6 +448,20 @@ export default function TripPage() {
       {/* ------------------------------------------------------------- */}
       {/* Days                                                          */}
       {/* ------------------------------------------------------------- */}
+      {/* A normal trip can be made secret later (e.g. a surprise added early) */}
+      {section === "overview" && !trip.visible_to && canEdit && (
+        <section className="section">
+          <div className="group">
+            <button type="button" className="row row--pressable" onClick={() => void setSecret(true)}>
+              <span className="row__body">
+                <span className="row__title">{confirmSecret ? "Tap again: hide it from everyone else" : "🤫 Make this a secret trip"}</span>
+                <span className="row__subtitle">Only you will see it, until you reveal it.</span>
+              </span>
+            </button>
+          </div>
+        </section>
+      )}
+
       {section === "days" && (
         <>
           {canEdit && (

@@ -54,6 +54,8 @@ export default function TripsPage() {
         end_date: fields.end_date,
         notes: fields.notes,
         created_by: me.id,
+        // A secret trip: only me (the database hides it from everyone else).
+        visible_to: fields.secret ? [me.id] : null,
       })
       .select("id")
       .single();
@@ -107,7 +109,14 @@ export default function TripsPage() {
     return (
       <Link key={t.id} href={`/trips/${t.id}`} className="row row--link trip-row">
         <span className="row__body">
-          <span className="row__title">{t.name}</span>
+          <span className="row__title">
+            {t.name}
+            {t.visible_to && (
+              <span className="trip-secret-badge" title="Secret: only you can see this trip">
+                🤫 Secret
+              </span>
+            )}
+          </span>
           <span className="row__subtitle">
             {tripRange(t, today)}
             {t.destination && ` · ${t.destination}`}

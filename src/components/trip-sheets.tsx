@@ -90,6 +90,8 @@ export interface TripFields {
   end_date: string;
   notes: string;
   participantIds: string[];
+  /** New trips: keep it a secret (only the person adding it can see it). */
+  secret?: boolean;
 }
 
 export function TripSheet({
@@ -118,6 +120,7 @@ export function TripSheet({
   const [end, setEnd] = useState(today);
   const [notes, setNotes] = useState("");
   const [who, setWho] = useState<string[]>([]);
+  const [secret, setSecret] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Step 1a: fill the fields when the sheet opens.
@@ -130,6 +133,7 @@ export function TripSheet({
     setNotes(trip?.notes ?? "");
     // A new trip starts with the whole household going.
     setWho(trip ? participantIds : members.map((m) => m.id));
+    setSecret(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, trip]);
 
@@ -137,7 +141,7 @@ export function TripSheet({
   const save = async () => {
     if (!valid) return;
     setBusy(true);
-    const ok = await onSave({ name: name.trim(), destination: destination.trim(), start_date: start, end_date: end, notes, participantIds: who });
+    const ok = await onSave({ name: name.trim(), destination: destination.trim(), start_date: start, end_date: end, notes, participantIds: who, secret });
     setBusy(false);
     if (ok) onClose();
   };
@@ -181,6 +185,15 @@ export function TripSheet({
           maxLength={5000}
           rows={3}
         />
+        {/* New trips: a surprise, hidden from everyone else until revealed */}
+        {!trip && (
+          <div className="group">
+            <div className="form-row">
+              <span className="form-row__label">🤫 Secret trip (only you can see it)</span>
+              <button type="button" role="switch" className="switch" aria-label="Secret trip" aria-checked={secret} onClick={() => setSecret(!secret)} />
+            </div>
+          </div>
+        )}
         {trip && onDelete && <DeleteButton label="Delete trip" onDelete={onDelete} />}
       </div>
     </Sheet>
