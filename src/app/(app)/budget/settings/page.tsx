@@ -61,7 +61,8 @@ function Settings() {
   useEffect(() => {
     if (!connection) return;
     setStartDay(connection.period_start_day);
-    const names = (keys?: string[]) => (keys ?? []).map((k) => k[0].toUpperCase() + k.slice(1)).join(", ");
+    // Names as typed (older rows hold lower-case keys: capitalise those).
+    const names = (list?: string[]) => (list ?? []).map((n) => (n === n.toLowerCase() ? n[0].toUpperCase() + n.slice(1) : n)).join(", ");
     setPassFrom(names(connection.passthrough_from));
     setPassTo(names(connection.passthrough_to));
   }, [connection]);

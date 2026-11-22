@@ -120,6 +120,19 @@ describe("passThroughIds (toeslagen moved straight on to savings)", () => {
     expect([...passThroughIds(payments, ["belastingdienst"], ["dewald"])].sort()).toEqual([1, 2, 3, 4, 5, 6]);
   });
 
+  it("matches a back-payment split between two accounts (names as typed, accents and all)", () => {
+    const split = [
+      p(1, "2026-08-27T08:47:00Z", 261300, "Belastingdienst"),
+      p(2, "2026-08-27T08:47:30Z", 51300, "Belastingdienst"),
+      p(3, "2026-08-27T08:48:40Z", 382200, "Belastingdienst"),
+      p(4, "2026-08-27T08:52:50Z", 23500, "Belastingdienst"),
+      p(5, "2026-08-27T10:30:00Z", -359500, "Dewald"),
+      p(6, "2026-08-27T15:32:00Z", -359500, "Anél ABN"), // €7 more than came in: within 1%
+      p(7, "2026-08-28T09:00:00Z", -2000, "Dewald"), // the pot is empty now: spending
+    ];
+    expect([...passThroughIds(split, ["Belastingdienst"], ["Dewald", "Anél"])].sort()).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
   it("does nothing without a rule, and only matches within a week", () => {
     expect(passThroughIds(payments, [], ["dewald"]).size).toBe(0);
     const late = [p(1, "2026-11-01T08:00:00Z", 9800, "Belastingdienst"), p(2, "2026-11-12T08:00:00Z", -9800, "Dewald")];

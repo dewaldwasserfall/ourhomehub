@@ -81,17 +81,19 @@ export function classifyPayment(amountCents: number, counterpartyName: string | 
 
 /**
  * Step 2b: money passed straight through (bunq_connections.passthrough_from
- * / passthrough_to, as shopKey()s).
+ * / passthrough_to: names, as typed; compared by shopKey()).
  *
  *   * Money in from a "from" payer (e.g. Belastingdienst) is passed through.
- *   * Money out to a "to" account (e.g. Dewald, moving it to savings) is
- *     passed through only when it follows such money in: within 7 days,
- *     for about the same amount (within €5). Each one in matches one out.
- *     Any other transfer to that account stays spending (it might be a
- *     reimbursement for groceries).
+ *   * Money out to a "to" account (e.g. Dewald, Anél: moving it to savings)
+ *     is passed through only when it's covered by such money in from the
+ *     last 7 days: the money in forms a pot, and each transfer out takes
+ *     from it (oldest first). So one toeslag moved on in one go matches,
+ *     and so does a large back-payment split between two accounts. A small
+ *     difference is allowed (€5, or 1% of the transfer). Any other transfer
+ *     to those accounts stays spending (it might be a reimbursement for
+ *     groceries).
  *
- * Takes payments already classified (classifyPayment) and returns the ids
- * that are passed through.
+ * Returns the ids of the payments that are passed through.
  */
 export const PASSTHROUGH_DAYS = 7;
 export const PASSTHROUGH_TOLERANCE_CENTS = 500;
@@ -102,30 +104,43 @@ export function passThroughIds(
   to: string[],
 ): Set<number> {
   const ids = new Set<number>();
-  if (from.length === 0) return ids;
-  const fromKeys = new Set(from);
-  const toKeys = new Set(to);
+  const fromKeys = new Set(from.map((n) => shopKey(n)).filter(Boolean));
+  const toKeys = new Set(to.map((n) => shopKey(n)).filter(Boolean));
+  if (fromKeys.size === 0) return ids;
   const sorted = [...payments].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
-  // 2b-1. Money in from a pass-through payer, oldest first; each can be
-  //       matched to one transfer out.
-  const open: Array<{ at: number; cents: number }> = [];
+
+  // The pot: money in from a pass-through payer, still to be moved on.
+  const pot: Array<{ at: number; cents: number }> = [];
   for (const p of sorted) {
     const key = shopKey(p.counterparty);
+    const at = Date.parse(p.created_at);
+
+    // 2b-1. Money in from a pass-through payer: passed through; into the pot.
     if (p.amount_cents > 0 && fromKeys.has(key)) {
       ids.add(p.id);
-      open.push({ at: Date.parse(p.created_at), cents: p.amount_cents });
+      pot.push({ at, cents: p.amount_cents });
       continue;
     }
-    // 2b-2. Money out to a pass-through account: matched to the oldest
-    //       unmatched money in from the last 7 days, about the same amount.
+
+    // 2b-2. Money out to a pass-through account: passed through when the
+    //       pot from the last 7 days covers it (within the tolerance).
     if (p.amount_cents < 0 && toKeys.has(key)) {
-      const at = Date.parse(p.created_at);
-      const i = open.findIndex(
-        (o) => at >= o.at && at - o.at <= PASSTHROUGH_DAYS * 86_400_000 && Math.abs(o.cents + p.amount_cents) <= PASSTHROUGH_TOLERANCE_CENTS,
-      );
-      if (i >= 0) {
+      const fresh = pot.filter((x) => at >= x.at && at - x.at <= PASSTHROUGH_DAYS * 86_400_000 && x.cents > 0);
+      const available = fresh.reduce((sum, x) => sum + x.cents, 0);
+      const out = -p.amount_cents;
+      const tolerance = Math.max(PASSTHROUGH_TOLERANCE_CENTS, Math.round(out * 0.01));
+      if (available > 0 && out <= available + tolerance) {
         ids.add(p.id);
-        open.splice(i, 1);
+        // Take it from the oldest money in first.
+        let left = out;
+        for (const x of fresh) {
+          const take = Math.min(x.cents, left);
+          x.cents -= take;
+          left -= take;
+          if (left <= 0) break;
+        }
+        // Anything within the tolerance empties what's left.
+        if (left > 0) for (const x of fresh) x.cents = 0;
       }
     }
   }

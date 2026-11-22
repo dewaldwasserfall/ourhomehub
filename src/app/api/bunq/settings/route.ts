@@ -2,7 +2,7 @@
  * POST /api/bunq/settings   { accountId?, accountLabel?, periodStartDay?, passthroughFrom?, passthroughTo? }
  *
  * passthroughFrom / passthroughTo: names (e.g. ["Belastingdienst"], ["Dewald"])
- * of money that only passes through the account; stored as shop keys, and the
+ * of money that only passes through the account; stored as typed, and the
  * next sync reclassifies the payments.
  *
  * The owner chooses the groceries account and sets the budget. Choosing a
@@ -43,9 +43,12 @@ export async function POST(request: NextRequest) {
     update.period_start_day = body.periodStartDay;
   }
 
-  // 2b. The pass-through rule: up to 10 names each, kept as shop keys.
+  // 2b. The pass-through rule: up to 10 names each, kept as typed (the
+  //     sync compares them by shopKey, so "Anél" still reads "Anél" here).
   const keys = (v: unknown) =>
-    Array.isArray(v) ? [...new Set(v.map((x) => shopKey(String(x).slice(0, 80))).filter(Boolean))].slice(0, 10) : null;
+    Array.isArray(v)
+      ? [...new Map(v.map((x) => String(x).trim().slice(0, 80)).filter((x) => shopKey(x)).map((x) => [shopKey(x), x])).values()].slice(0, 10)
+      : null;
   const from = keys(body.passthroughFrom);
   const to = keys(body.passthroughTo);
   if (from) update.passthrough_from = from;
